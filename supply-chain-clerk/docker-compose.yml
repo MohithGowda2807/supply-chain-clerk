@@ -36,6 +36,9 @@ services:
       mosquitto:
         condition: service_started
     env_file: .env
+    environment:
+      NEO4J_URI: bolt://neo4j:7687
+      MQTT_BROKER: mosquitto
     volumes:
       - ./backend:/app
     restart: unless-stopped
