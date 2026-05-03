@@ -1,0 +1,302 @@
+Smart move — do everything possible solo before hardware arrives. Here's exactly what you can set up right now, in order.
+
+What You Can Do 100% Online Right Now
+🔴 Do These First (Foundation — everything else depends on this)
+1. GitHub Repo Setup — 30 minutes
+supply-chain-clerk/
+  backend/
+    app/
+      api/
+      models/
+      services/
+      prompts/
+  firmware/
+  frontend/
+  docker-compose.yml
+  .env.example
+  README.md
+
+Create the repo, add all 4 teammates as collaborators
+Set up branch protection on main (require PR + 1 review)
+Create 4 branches: feat/backend, feat/frontend, feat/firmware, feat/ml
+
+
+2. Docker Compose — 45 minutes
+Create docker-compose.yml:
+yamlversion: '3.8'
+services:
+  neo4j:
+    image: neo4j:5.18-community
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_AUTH: neo4j/smartguard123
+      NEO4J_PLUGINS: '["apoc"]'
+    volumes:
+      - neo4j_data:/data
+
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
+
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    depends_on:
+      - neo4j
+      - mosquitto
+    env_file: .env
+
+volumes:
+  neo4j_data:
+Create mosquitto.conf:
+listener 1883
+allow_anonymous true
+listener 9001
+protocol websockets
+Run docker compose up -d — verify Neo4j browser opens at localhost:7474.
+
+3. Get API Keys — 15 minutes
+
+Gemini API — go to aistudio.google.com, get free API key. Free tier: 15 requests/min, 1500/day. Enough for everything.
+OpenAI (optional benchmark) — platform.openai.com, add $5 credit
+Store both in .env:
+
+GEMINI_API_KEY=your_key
+OPENAI_API_KEY=your_key
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=smartguard123
+MQTT_BROKER=localhost
+MQTT_PORT=1883
+
+🟡 Do These Next (Core Backend)
+4. FastAPI Project Setup — 1 hour
+bashcd backend
+python -m venv venv
+source venv/bin/activate  # or venv\Scripts\activate on Windows
+pip install fastapi uvicorn pydantic neo4j paho-mqtt \
+            google-generativeai openai opencv-python \
+            pillow python-multipart python-dotenv pytest httpx
+pip freeze > requirements.txt
+Create backend/app/main.py:
+pythonfrom fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI(title="Supply Chain Clerk API")
+
+app.add_middleware(CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"])
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+Run it: uvicorn app.main:app --reload — verify localhost:8000/docs opens Swagger UI.
+
+5. Pydantic Schema — 45 minutes
+Create backend/app/models/intake_record.py — this is the most important schema in the project:
+pythonfrom pydantic import BaseModel, field_validator
+from datetime import date
+from typing import Optional
+from statistics import mean
+
+class FieldWithConfidence(BaseModel):
+    value: Optional[str | int | date]
+    confidence: float  # 0.0 to 1.0
+
+class IntakeRecord(BaseModel):
+    batch_no: FieldWithConfidence
+    expiry_date: FieldWithConfidence
+    quantity: FieldWithConfidence
+    supplier_name: FieldWithConfidence
+    product_name: FieldWithConfidence
+    unit_of_measure: FieldWithConfidence
+
+    @property
+    def overall_confidence(self) -> float:
+        scores = [f.confidence for f in [
+            self.batch_no, self.expiry_date,
+            self.quantity, self.supplier_name,
+            self.product_name
+        ]]
+        return mean(scores)
+
+    @property
+    def needs_review(self) -> bool:
+        return self.overall_confidence < 0.75
+
+6. Extraction Prompt Engineering — 2 hours (most important task)
+Create backend/app/prompts/v1_extraction.txt:
+You are a pharmaceutical warehouse document parser.
+
+Your task: Extract structured data from the document image provided.
+
+CRITICAL RULES:
+1. Return ONLY valid JSON. No explanation, no markdown, no prose.
+2. If a field is illegible, unclear, or absent — return null for value and 0.0 for confidence. NEVER invent or guess a value.
+3. Confidence score: 1.0 = certain, 0.75 = probable, 0.5 = uncertain, 0.0 = illegible/absent.
+
+Return this exact JSON structure:
+{
+  "batch_no": {"value": string | null, "confidence": float},
+  "expiry_date": {"value": "YYYY-MM-DD" | null, "confidence": float},
+  "quantity": {"value": integer | null, "confidence": float},
+  "supplier_name": {"value": string | null, "confidence": float},
+  "product_name": {"value": string | null, "confidence": float},
+  "unit_of_measure": {"value": string | null, "confidence": float}
+}
+
+Example for a partially legible handwritten slip:
+{
+  "batch_no": {"value": "BT-2024-447", "confidence": 0.85},
+  "expiry_date": {"value": "2026-03-01", "confidence": 0.90},
+  "quantity": {"value": null, "confidence": 0.0},
+  "supplier_name": {"value": "Himalaya Herbs", "confidence": 0.95},
+  "product_name": {"value": "Ashwagandha Extract", "confidence": 0.92},
+  "unit_of_measure": {"value": "units", "confidence": 0.80}
+}
+Test it manually on aistudio.google.com — upload a random invoice image and paste the prompt. Iterate until JSON comes back clean every time.
+
+7. VLM Service Client — 1.5 hours
+Create backend/app/services/vlm_client.py:
+pythonimport base64, json, re
+from pathlib import Path
+import google.generativeai as genai
+from PIL import Image
+import io, os
+
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+
+PROMPT = Path("app/prompts/v1_extraction.txt").read_text()
+
+def preprocess_image(image_bytes: bytes) -> bytes:
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    img.save(buf := io.BytesIO(), format="JPEG", quality=95)
+    return buf.getvalue()
+
+async def extract_from_document(image_bytes: bytes) -> dict:
+    processed = preprocess_image(image_bytes)
+    model = genai.GenerativeModel("gemini-1.5-flash")
+    
+    response = model.generate_content([
+        PROMPT,
+        {"mime_type": "image/jpeg",
+         "data": base64.b64encode(processed).decode()}
+    ])
+    
+    # Strip markdown if model wraps in ```json
+    text = response.text.strip()
+    text = re.sub(r'^```json|```$', '', text, flags=re.MULTILINE).strip()
+    
+    return json.loads(text)
+
+8. Neo4j Schema + Seed Data — 1.5 hours
+Open localhost:7474 in browser. Run these Cypher queries:
+cypher// Constraints
+CREATE CONSTRAINT FOR (s:Supplier) REQUIRE s.id IS UNIQUE;
+CREATE CONSTRAINT FOR (p:Product) REQUIRE p.id IS UNIQUE;
+CREATE CONSTRAINT FOR (b:Batch) REQUIRE b.batch_no IS UNIQUE;
+CREATE CONSTRAINT FOR (bin:StorageBin) REQUIRE bin.bin_code IS UNIQUE;
+
+// Seed 5 Suppliers
+CREATE (:Supplier {id:'S001', name:'Himalaya Herbs', region:'Karnataka', active:true});
+CREATE (:Supplier {id:'S002', name:'Dabur Pharma', region:'Delhi', active:true});
+CREATE (:Supplier {id:'S003', name:'Patanjali', region:'Uttarakhand', active:true});
+
+// Seed 5 Products
+CREATE (:Product {id:'P001', name:'Ashwagandha Extract', category:'herbal', unit:'units'});
+CREATE (:Product {id:'P002', name:'Paracetamol 500mg', category:'analgesic', unit:'strips'});
+CREATE (:Product {id:'P003', name:'Vitamin C 1000mg', category:'supplement', unit:'bottles'});
+
+// Seed 10 Bins
+CREATE (:StorageBin {bin_code:'A01', zone:'herbal', capacity:50, current_occupancy:0, led_index:0});
+CREATE (:StorageBin {bin_code:'A02', zone:'herbal', capacity:50, current_occupancy:0, led_index:1});
+CREATE (:StorageBin {bin_code:'B01', zone:'analgesic', capacity:100, current_occupancy:0, led_index:2});
+CREATE (:StorageBin {bin_code:'B02', zone:'analgesic', capacity:100, current_occupancy:0, led_index:3});
+CREATE (:StorageBin {bin_code:'C01', zone:'supplement', capacity:75, current_occupancy:0, led_index:4});
+Write your 4 benchmark queries and test them:
+cypher// Query 1: All batches from a supplier in last 30 days
+MATCH (s:Supplier {name:'Himalaya Herbs'})-[:SUPPLIED]->(b:Batch)
+WHERE b.intake_timestamp > datetime() - duration('P30D')
+RETURN b;
+
+// Query 2: All products expiring within N days
+MATCH (b:Batch)-[:STORED_IN]->(bin:StorageBin)
+WHERE b.expiry_date < date() + duration('P30D')
+RETURN b, bin;
+
+// Query 3: Full history of a bin
+MATCH (b:Batch)-[:STORED_IN]->(bin:StorageBin {bin_code:'A01'})
+RETURN b ORDER BY b.intake_timestamp DESC;
+
+// Query 4: All bins if supplier quarantined
+MATCH (s:Supplier {name:'Himalaya Herbs'})-[:SUPPLIED]->(b:Batch)-[:STORED_IN]->(bin:StorageBin)
+RETURN DISTINCT bin.bin_code, b.batch_no, b.expiry_date;
+
+🟢 Do These in Parallel / After (Frontend + Dataset)
+9. React Dashboard Scaffold — 1 hour
+bashcd frontend
+npm create vite@latest . -- --template react
+npm install
+npm install tailwindcss @tailwindcss/vite recharts
+npm install react-force-graph
+Create the skeleton with 4 panels:
+
+BinGrid — 10 bin cards, hardcoded state for now
+LiveIntakeFeed — empty list, WebSocket ready
+SystemStatusBar — hardcoded green indicators
+SupplierGraph — empty canvas
+
+Connect WebSocket:
+javascriptconst ws = new WebSocket('ws://localhost:8000/ws');
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  // dispatch to state based on data.event_type
+};
+
+10. Build Your Test Dataset — Ongoing (most valuable use of time)
+This is what makes it a paper. Start collecting/creating documents now:
+
+Download real invoice templates from Canva, fill with fake pharma data
+Photograph them at various angles, lighting conditions
+Handwrite 20 packing slips yourself (different handwriting styles — ask teammates)
+Crumple some, fold some, photograph under bad lighting
+Create ground truth JSON for each
+
+Target: 50 documents this week, 200 total before paper submission.
+Store in tests/fixtures/documents/ with naming:
+printed_clean_001.jpg    → printed_clean_001_gt.json
+handwritten_legible_001.jpg → handwritten_legible_001_gt.json
+degraded_001.jpg         → degraded_001_gt.json
+
+11. MQTT Simulation (No Hardware Needed) — 30 minutes
+Install MQTT Explorer (free desktop app — mqtt-explorer.com). Connect to localhost:1883. You can now simulate your ESP32:
+
+Publish to warehouse/bin/confirm manually → test your backend receives it
+Subscribe to warehouse/bin/light → see what your backend sends
+This lets you build and test the entire MQTT pipeline before hardware arrives
+
+
+Priority Order for Today
+
+GitHub repo + branch structure — 30 min
+Docker Compose up and running — 45 min
+Get Gemini API key, test in AI Studio — 15 min
+FastAPI skeleton + health endpoint — 30 min
+Pydantic IntakeRecord schema — 45 min
+Extraction prompt v1, test manually in AI Studio — 2 hours
+VLM client code — 1 hour
+Neo4j seed data via browser — 1 hour
+Start document dataset collection — ongoing
+
+By end of today you should have: Docker running, Gemini extracting JSON from a test invoice image, Neo4j seeded with suppliers/products/bins, FastAPI health endpoint live.
+
+Want me to generate a docker-compose.yml, the full vlm_client.py, or the complete FastAPI router for /intake/capture as ready-to-paste code?
