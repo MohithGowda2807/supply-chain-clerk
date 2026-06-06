@@ -44,6 +44,7 @@ class MQTTManager:
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
     async def start(self) -> None:
+        self._loop = asyncio.get_running_loop()
         self._client = mqtt.Client(client_id="supply-chain-clerk-backend")
         
         if _USERNAME and _PASSWORD:
@@ -97,10 +98,11 @@ class MQTTManager:
         else:
             return
 
-        asyncio.run_coroutine_threadsafe(
-            ws_manager.broadcast(event),
-            asyncio.get_event_loop(),
-        )
+        if getattr(self, "_loop", None) and self._loop.is_running():
+            asyncio.run_coroutine_threadsafe(
+                ws_manager.broadcast(event),
+                self._loop,
+            )
 
     # ── Publishing ────────────────────────────────────────────────────────────
     async def publish_bin_light(

@@ -20,6 +20,8 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         while True:
             # Keep the connection alive; client pings every 30 s
-            await websocket.receive_text()
+            data = await websocket.receive_text()
+            if data == "ping":
+                await websocket.send_text("pong")
     except WebSocketDisconnect:
         ws_manager.disconnect(websocket)

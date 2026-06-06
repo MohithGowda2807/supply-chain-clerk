@@ -1,6 +1,7 @@
 services:
   - type: web
     name: supply-chain-clerk-api
+    plan: free
     env: python
     buildCommand: "cd supply-chain-clerk/backend && pip install -r requirements.txt"
     startCommand: "cd supply-chain-clerk/backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT"

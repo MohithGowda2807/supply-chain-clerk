@@ -1,274 +1,234 @@
-/*
- * Supply Chain Clerk — ESP32 Firmware
- * 
- * Hardware:
- *   - ESP32 (any variant)
- *   - WS2812B LED strip (5 segments, one per bin)
- *   - 5 confirmation buttons (or IR sensors) — GPIO 32–36
- *   - WiFi connection to same LAN as backend
- *
- * MQTT Topics:
- *   Subscribe: warehouse/bin/light    (bin lighting commands)
- *   Subscribe: warehouse/bin/confirm  (not used from ESP32 Rx side)
- *   Publish:   warehouse/bin/confirm  (button presses)
- *   Publish:   warehouse/bin/status   (heartbeat every 10 s)
- *
- * USB Serial Fallback:
- *   Listens at 115200 baud for the same JSON commands as MQTT.
- */
-
-#include <Arduino.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <PubSubClient.h>
-#include <FastLED.h>
 #include <ArduinoJson.h>
+#include <ESP32Servo.h>
+#include <FastLED.h>
 
 // ── WiFi / MQTT config ────────────────────────────────────────────────────────
-// ⚠️ Update your WiFi credentials before compiling ⚠️
-const char* SSID        = "YOUR_WIFI_SSID";          // Your actual WiFi network name
-const char* WIFI_PASS   = "YOUR_WIFI_PASSWORD";      // Your actual WiFi password
+const char* SSID        = "can't you afford?";
+const char* WIFI_PASS   = "Abcdefgh";
 const char* MQTT_SERVER = "da26c5b9a71a4180ae338a5ffb38070a.s1.eu.hivemq.cloud";
-const int   MQTT_PORT   = 8883;                      // 8883 for secure Cloud MQTT
-const char* MQTT_USER   = "MoSDGo";                  // HiveMQ Cloud username
-const char* MQTT_PASS   = "aERTdfr!67%34&*^%rdfsyt"; // HiveMQ Cloud password
-const char* CLIENT_ID   = "esp32-warehouse-01";
+const int   MQTT_PORT   = 8883;
+const char* MQTT_USER   = "MoSDGo";
+const char* MQTT_PASS   = "aERTdfr!67%34&*^%rdfsyt";
+const char* CLIENT_ID   = "esp32-conveyor-01";
 
-// ── LED config ────────────────────────────────────────────────────────────────
-#define LED_PIN        5
-#define NUM_LEDS      20     // 20 bins × 1 LED each (or use segments)
-#define LED_TYPE   WS2812B
-#define COLOR_ORDER    GRB
+// ── Hardware Pins ────────────────────────────────────────────────────────────
+// Servos (Conveyor Routing)
+const int SERVO_PIN_1 = 13;
+const int SERVO_PIN_2 = 12;
+const int SERVO_PIN_3 = 14;
+
+// IR Sensors (Placement Confirmation)
+const int IR_PIN_1 = 25;
+const int IR_PIN_2 = 26;
+const int IR_PIN_3 = 27;
+
+// WS2812B LEDs
+#define LED_PIN     15
+#define NUM_LEDS    3
+#define BRIGHTNESS  100
+#define LED_TYPE    WS2812B
+#define COLOR_ORDER GRB
 
 CRGB leds[NUM_LEDS];
+Servo servo1, servo2, servo3;
 
-// ── Bin map: bin_code → led_index, button_gpio ────────────────────────────────
-struct BinDef {
-  const char* bin_code;
-  int         led_index;
-  int         button_gpio;
-};
+WiFiClientSecure espClient;
+PubSubClient client(espClient);
 
-const BinDef BIN_MAP[] = {
-  {"A01", 0,  32}, // GPIO 32 has internal pull-up
-  {"A02", 1,  33}, // GPIO 33 has internal pull-up
-  {"A03", 2,  25}, // GPIO 25 has internal pull-up (replaces GPIO 34 which is input-only)
-  {"A04", 3,  26}, // GPIO 26 has internal pull-up (replaces GPIO 35 which is input-only)
-  {"A05", 4,  27}, // GPIO 27 has internal pull-up (replaces GPIO 36 which is input-only)
-};
-const int NUM_BINS = sizeof(BIN_MAP) / sizeof(BIN_MAP[0]);
-
-// ── LED State Machine ─────────────────────────────────────────────────────────
-enum LedState { LED_OFF, AWAITING, CONFIRMED, ALERT_EXPIRY, ALERT_QUARANTINE };
-
-struct BinState {
-  LedState state        = LED_OFF;
-  unsigned long timer   = 0;
-  bool          active  = false;
-};
-
-BinState binStates[NUM_BINS];
-
-// ── Button debounce ───────────────────────────────────────────────────────────
-unsigned long lastButtonTime[NUM_BINS] = {0};
-const unsigned long DEBOUNCE_MS = 50;
-
-// ── MQTT ──────────────────────────────────────────────────────────────────────
-#include <WiFiClientSecure.h>
-WiFiClientSecure wifiClient;
-PubSubClient mqttClient(wifiClient);
-
-// ── Heartbeat ─────────────────────────────────────────────────────────────────
+// ── Variables ─────────────────────────────────────────────────────────────────
 unsigned long lastHeartbeat = 0;
-const unsigned long HEARTBEAT_INTERVAL = 10000;
+bool expectingConfirmation1 = false;
+bool expectingConfirmation2 = false;
+bool expectingConfirmation3 = false;
+String pendingBatch1 = "";
+String pendingBatch2 = "";
+String pendingBatch3 = "";
 
-// ── Forward declarations ──────────────────────────────────────────────────────
-void mqttCallback(char* topic, byte* payload, unsigned int length);
-void connectMQTT();
-void setLedForBin(int idx, LedState state);
-void pollButtons();
-void updateLeds();
-void processSerialCommand(const String& line);
+void setup_wifi() {
+  delay(10);
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(SSID);
+  
+  WiFi.begin(SSID, WIFI_PASS);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("");
+  Serial.println("WiFi connected");
+}
 
-// ─────────────────────────────────────────────────────────────────────────────
+void reconnect() {
+  while (!client.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    if (client.connect(CLIENT_ID, MQTT_USER, MQTT_PASS)) {
+      Serial.println("connected");
+      client.subscribe("warehouse/bin/light");
+      
+      // Publish alive status immediately on connect
+      publishStatus();
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" try again in 5 seconds");
+      delay(5000);
+    }
+  }
+}
+
+void publishStatus() {
+  StaticJsonDocument<200> doc;
+  doc["esp32_alive"] = true;
+  doc["status"] = "online";
+  
+  char buffer[200];
+  serializeJson(doc, buffer);
+  client.publish("warehouse/bin/status", buffer);
+}
+
+void publishConfirmation(int binIndex, String batchNo) {
+  StaticJsonDocument<200> doc;
+  doc["bin_id"] = "A0" + String(binIndex + 1); // e.g., A01, A02, A03
+  doc["confirmed"] = true;
+  doc["batch_no"] = batchNo;
+  
+  char buffer[200];
+  serializeJson(doc, buffer);
+  client.publish("warehouse/bin/confirm", buffer);
+  Serial.print("Confirmed placement in Bin ");
+  Serial.println(binIndex + 1);
+}
+
+void resetBin(int binIndex) {
+  // Turn off LED
+  leds[binIndex] = CRGB::Black;
+  FastLED.show();
+  
+  // Reset Servo to 0 degrees (straight)
+  if (binIndex == 0) servo1.write(0);
+  if (binIndex == 1) servo2.write(0);
+  if (binIndex == 2) servo3.write(0);
+}
+
+void activateBin(int binIndex, const char* colorStr) {
+  // Light up LED
+  if (strcmp(colorStr, "green") == 0) leds[binIndex] = CRGB::Green;
+  else if (strcmp(colorStr, "amber") == 0) leds[binIndex] = CRGB::Orange;
+  else if (strcmp(colorStr, "red") == 0) leds[binIndex] = CRGB::Red;
+  else leds[binIndex] = CRGB::White; // Default
+  FastLED.show();
+  
+  // Trigger Servo to 90 degrees (divert)
+  if (binIndex == 0) servo1.write(90);
+  if (binIndex == 1) servo2.write(90);
+  if (binIndex == 2) servo3.write(90);
+}
+
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  // Convert payload to string
+  String msg = "";
+  for (int i = 0; i < length; i++) {
+    msg += (char)payload[i];
+  }
+  
+  Serial.print("Message arrived [");
+  Serial.print(topic);
+  Serial.print("]: ");
+  Serial.println(msg);
+
+  if (strcmp(topic, "warehouse/bin/light") == 0) {
+    StaticJsonDocument<256> doc;
+    DeserializationError error = deserializeJson(doc, msg);
+    if (error) return;
+
+    const char* bin_id = doc["bin_id"];
+    const char* color = doc["color"];
+    const char* batch_no = doc["batch_no"];
+    
+    // Map bin_id (e.g. "A01", "A02", "A03") to integer indices (0, 1, 2)
+    int binIndex = -1;
+    if (strcmp(bin_id, "A01") == 0) binIndex = 0;
+    else if (strcmp(bin_id, "A02") == 0) binIndex = 1;
+    else if (strcmp(bin_id, "A03") == 0) binIndex = 2;
+
+    if (binIndex != -1) {
+      activateBin(binIndex, color);
+      
+      // Mark as expecting confirmation
+      if (binIndex == 0) { expectingConfirmation1 = true; pendingBatch1 = String(batch_no); }
+      if (binIndex == 1) { expectingConfirmation2 = true; pendingBatch2 = String(batch_no); }
+      if (binIndex == 2) { expectingConfirmation3 = true; pendingBatch3 = String(batch_no); }
+    }
+  }
+}
+
 void setup() {
   Serial.begin(115200);
 
-  // LED strip
-  FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS)
-         .setCorrection(TypicalLEDStrip);
-  FastLED.setBrightness(100);
-  fill_solid(leds, NUM_LEDS, CRGB::Black);
+  // Setup LEDs
+  FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS).setCorrection(TypicalLEDStrip);
+  FastLED.setBrightness(BRIGHTNESS);
+  for(int i=0; i<NUM_LEDS; i++) leds[i] = CRGB::Black;
   FastLED.show();
 
-  // Button pins
-  for (int i = 0; i < NUM_BINS; i++) {
-    pinMode(BIN_MAP[i].button_gpio, INPUT_PULLUP);
-  }
+  // Setup Servos
+  servo1.setPeriodHertz(50);
+  servo2.setPeriodHertz(50);
+  servo3.setPeriodHertz(50);
+  servo1.attach(SERVO_PIN_1, 500, 2400);
+  servo2.attach(SERVO_PIN_2, 500, 2400);
+  servo3.attach(SERVO_PIN_3, 500, 2400);
+  resetBin(0); resetBin(1); resetBin(2);
 
-  // WiFi
-  WiFi.begin(SSID, WIFI_PASS);
-  unsigned long t = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t < 10000) {
-    delay(250);
-  }
+  // Setup IR Sensors
+  pinMode(IR_PIN_1, INPUT);
+  pinMode(IR_PIN_2, INPUT);
+  pinMode(IR_PIN_3, INPUT);
 
-  // MQTT
-  wifiClient.setInsecure(); // Allow connection to TLS without checking certificate
-  mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
-  mqttClient.setCallback(mqttCallback);
-  connectMQTT();
+  // Secure connection setup (skipping cert validation for demo simplicity)
+  espClient.setInsecure();
+
+  setup_wifi();
+  client.setServer(MQTT_SERVER, MQTT_PORT);
+  client.setCallback(mqttCallback);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 void loop() {
-  if (WiFi.status() == WL_CONNECTED && !mqttClient.connected()) {
-    connectMQTT();
+  if (!client.connected()) {
+    reconnect();
   }
-  mqttClient.loop();
+  client.loop();
 
-  pollButtons();
-  updateLeds();
-
-  // USB serial fallback
-  if (Serial.available()) {
-    String line = Serial.readStringUntil('\n');
-    line.trim();
-    if (line.length() > 0) processSerialCommand(line);
-  }
-
-  // Heartbeat
-  if (millis() - lastHeartbeat > HEARTBEAT_INTERVAL) {
-    lastHeartbeat = millis();
-    StaticJsonDocument<128> doc;
-    doc["device"] = CLIENT_ID;
-    doc["ts"]     = millis() / 1000;
-    doc["wifi_rssi"] = WiFi.RSSI();
-    String out;
-    serializeJson(doc, out);
-    mqttClient.publish("warehouse/bin/status", out.c_str());
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// MQTT callback — handle warehouse/bin/light commands
-// ─────────────────────────────────────────────────────────────────────────────
-void mqttCallback(char* topic, byte* payload, unsigned int length) {
-  StaticJsonDocument<256> doc;
-  DeserializationError err = deserializeJson(doc, payload, length);
-  if (err) return;
-
-  const char* bin_id = doc["bin_id"];
-  const char* colour = doc["colour"] | "green";
-
-  for (int i = 0; i < NUM_BINS; i++) {
-    if (strcmp(BIN_MAP[i].bin_code, bin_id) == 0) {
-      LedState state = AWAITING;
-      if (strcmp(colour, "amber")     == 0) state = ALERT_EXPIRY;
-      if (strcmp(colour, "red")       == 0) state = ALERT_QUARANTINE;
-      binStates[i].state = state;
-      binStates[i].timer = millis();
-      break;
-    }
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Poll confirmation buttons (non-blocking, millis-based)
-// ─────────────────────────────────────────────────────────────────────────────
-void pollButtons() {
+  // Heartbeat every 10 seconds
   unsigned long now = millis();
-  for (int i = 0; i < NUM_BINS; i++) {
-    if (binStates[i].state != AWAITING) continue;
-    if (digitalRead(BIN_MAP[i].button_gpio) == LOW) {
-      if (now - lastButtonTime[i] > DEBOUNCE_MS) {
-        lastButtonTime[i] = now;
-
-        // Transition to CONFIRMED
-        binStates[i].state = CONFIRMED;
-        binStates[i].timer = now;
-
-        // Publish confirmation
-        StaticJsonDocument<128> doc;
-        doc["bin_id"] = BIN_MAP[i].bin_code;
-        doc["ts"]     = now / 1000;
-        String out;
-        serializeJson(doc, out);
-        mqttClient.publish("warehouse/bin/confirm", out.c_str());
-      }
-    }
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// LED State Machine update (called every loop)
-// ─────────────────────────────────────────────────────────────────────────────
-void updateLeds() {
-  unsigned long now = millis();
-  bool changed = false;
-
-  for (int i = 0; i < NUM_BINS; i++) {
-    int idx = BIN_MAP[i].led_index;
-    CRGB colour;
-
-    switch (binStates[i].state) {
-      case LED_OFF:
-        colour = CRGB::Black;
-        break;
-
-      case AWAITING:
-        colour = CRGB::Green;
-        break;
-
-      case CONFIRMED:
-        // 2-second green flash, then off
-        if (now - binStates[i].timer < 2000) {
-          colour = CRGB::Lime;
-        } else {
-          binStates[i].state = LED_OFF;
-          colour = CRGB::Black;
-        }
-        break;
-
-      case ALERT_EXPIRY:
-        // Slow amber pulse 1 Hz
-        colour = ((now / 500) % 2 == 0) ? CRGB::Orange : CRGB::Black;
-        break;
-
-      case ALERT_QUARANTINE:
-        // Fast red blink 4 Hz
-        colour = ((now / 125) % 2 == 0) ? CRGB::Red : CRGB::Black;
-        break;
-    }
-
-    if (leds[idx] != colour) {
-      leds[idx] = colour;
-      changed = true;
-    }
+  if (now - lastHeartbeat > 10000) {
+    lastHeartbeat = now;
+    publishStatus();
   }
 
-  if (changed) FastLED.show();
-}
+  // Check IR sensors for confirmations (IR sensors typically read LOW when object detected)
+  if (expectingConfirmation1 && digitalRead(IR_PIN_1) == LOW) {
+    publishConfirmation(0, pendingBatch1);
+    expectingConfirmation1 = false;
+    resetBin(0);
+    delay(500); // Debounce
+  }
+  
+  if (expectingConfirmation2 && digitalRead(IR_PIN_2) == LOW) {
+    publishConfirmation(1, pendingBatch2);
+    expectingConfirmation2 = false;
+    resetBin(1);
+    delay(500); // Debounce
+  }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// USB Serial command processor (same schema as MQTT)
-// ─────────────────────────────────────────────────────────────────────────────
-void processSerialCommand(const String& line) {
-  StaticJsonDocument<256> doc;
-  if (deserializeJson(doc, line) != DeserializationError::Ok) return;
-  // Reuse the same handler
-  char topicBuf[] = "warehouse/bin/light";
-  mqttCallback(topicBuf, (byte*)line.c_str(), line.length());
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-void connectMQTT() {
-  int attempts = 0;
-  while (!mqttClient.connected() && attempts < 5) {
-    if (mqttClient.connect(CLIENT_ID, MQTT_USER, MQTT_PASS)) {
-      mqttClient.subscribe("warehouse/bin/light");
-    } else {
-      delay(1000);
-      attempts++;
-    }
+  if (expectingConfirmation3 && digitalRead(IR_PIN_3) == LOW) {
+    publishConfirmation(2, pendingBatch3);
+    expectingConfirmation3 = false;
+    resetBin(2);
+    delay(500); // Debounce
   }
 }
