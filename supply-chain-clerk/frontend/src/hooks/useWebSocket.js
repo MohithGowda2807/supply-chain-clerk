@@ -9,7 +9,8 @@ export function useWebSocket(onEvent) {
   const pingRef = useRef(null);
 
   const connect = useCallback(() => {
-    const ws = new WebSocket('ws://localhost:8000/ws');
+    const wsUrl = import.meta.env.VITE_WS_BASE_URL || 'ws://localhost:8000/ws';
+    const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
       console.log('[WS] Connected');

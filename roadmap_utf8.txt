@@ -1,0 +1,922 @@
+﻿AGENTIC SUPPLY CHAIN CLERK
+Multimodal OCR + 
+IoT
+ Warehouse Automation
+Developer Technical Roadmap
+IoT
+ Hackathon Project Documentation
+Version 
+1.0  |
+  2025
+1. Problem Statement
+1.1 Industry Context
+Pharmaceutical and herbal product warehouses operate under strict regulatory mandates that require complete batch-level traceability ù from the moment a shipment arrives at the receiving dock to the point it leaves as a dispensed or shipped order. The inta
+ke process is the foundational step of this chain. When it fails, every downstream process ù inventory accuracy, expiry management, recall readiness, and compliance reporting ù is compromised.
+Despite decades of supply chain digitisation, the physical inta
+ke desk at small-to-mid-size pharmaceutical and herbal warehouses remains stubbornly manual. Workers receive physical packing slips, handwritten invoices, and product labels in dozens of formats from hundreds of suppliers. They transcribe data by hand ù or
+ at best, scan barcodes into a disconnected spreadsheet ù before placing items in bins whose locations are tracked only in someone's memory.
+1.2 The Core Bottleneck
+The fundamental problem: unstructured, heterogeneous paper documents at the intake point cr
+eate a data gap between the physical product and its digital record. This gap is where errors, delays, and compliance failures originate.
+The specific failure modes are:
+Manual transcription errors: A warehouse clerk transcribing a 12-digit batch number b
+y hand introduces errors at rates estimated between 1û3%. In a pharma context, one wrong digit means a batch cannot be recalled accurately.
+Document heterogeneity: Supplier A prints a structured invoice; Supplier B sends a handwritten chit; Supplier C prov
+ides a label in a regional language. No single barcode scanner or template-based OCR system handles all three.
+Physical placement latency: After data entry, the clerk must consult a paper bin map or a separate terminal to determine where to place the produ
+ct. This adds 30û90 seconds per item in a busy warehouse.
+Broken traceability chains: Because supplier, batch, and storage location are recorded in separate systems (or not at all), reconstructing a product'
+s history for an audit or recall is time-consuming and error-prone.
+Expiry mismanagement: Without automated expiry parsing and alerting at intake, near-expiry stock gets shelved in standard locations and discovered only during periodic audits ù often too l
+ate.
+1.3 Scale of the Problem
+Consider a mid-size herbal products warehouse receiving 200 line items per day across 40 suppliers. Even at a conservative 2-minute manual processing time per item, that is over 6 person-hours per day spent purely on data entr
+y ù work that generates no insight, only records. At a 2% error rate, four items per day carry incorrect metadata, compounding audit risk over time.
+Larger pharmaceutical distributors face this problem at 10x the scale, with the added burden of regulatory frameworks such as Schedule H drug tracking, Cold Chain handling requirements, and Good Distribution Practice (GDP) mandates that require timestamped
+, auditable intake records.
+1.4 Problem Statement Summary
+Dimension
+Problem
+Who
+Warehouse clerks and inventory managers at pharmaceutical/herbal warehouses
+What
+Manual transcription of heterogeneous supplier documents (packing slips, invoices, handwritten labels)
+When
+At the receiving/intake stage of every inbound shipment
+Impact
+Errors in batch records, placement delays, broken traceability, expiry failures, compliance risk
+Root Cause
+No automated pipeline converts unstructured physical documents into validated, structured digital records with physical bin guidance
+2. Existing Solutions and Their Limitations
+2.1 Barcode and QR Code Scanning
+The most widely deployed solution is GS1-standard barcode scanning at the receiving dock. Workers scan a barcode on each product and the WMS (Warehouse Management System) pulls th
+e associated record from a pre-loaded product master.
+Limitation ù 
+Requires
+ prior master data: The product must already exist in the system with its barcode pre-registered. New SKUs, ad-hoc supplier shipments, or products from non-standardised suppliers br
+eak this flow entirely.
+Limitation ù 
+Does
+ not parse document context: A barcode on a product label captures the product ID. It does not capture the batch number, expiry date, or supplier-specific lot information printed on the accompanying packing slip.
+Li
+mitation ù No handwriting support: Handwritten chits, informal delivery notes, and manually annotated invoices are completely invisible to barcode scanners.
+2.2 Template-Based OCR Systems
+Some mid-tier WMS platforms include OCR modules that can extract tex
+t from invoices if the supplier uses a known, fixed template. The user maps field coordinates ("Batch No. is always at position x=210, y=340 on this supplier's invoice") and the system extracts accordingly.
+Limitation ù 
+Brittle
+ to format variation: When a 
+supplier changes their invoice template, the entire mapping breaks and requires manual reconfiguration by an IT administrator.
+Limitation ù Zero tolerance for handwriting: Template OCR relies on consistent typography and layout. Handwritten annotations are
+ treated as noise.
+Limitation ù 
+Does
+ not understand context: If a field is partially obscured or the document is crumpled, the extraction fails silently ù returning an empty or wrong value without flagging the confidence issue.
+2.3 Full ERP Integration (SAP, Oracle)
+Enterprise pharmaceutical companies deploy end-to-end ERP systems with electronic data interchange (EDI) from suppliers, eliminating paper entirely. Suppliers submit structured XML or EDIFACT messages that map directl
+y into the ERP.
+Limitation ù Cost and supplier readiness: EDI integration costs tens of thousands of dollars per supplier connection. Small and mid-size herbal suppliers, particularly in emerging markets, cannot support EDI.
+Limitation ù Physical placement is still manual: Even with perfect digital records, the ERP does not tell a worker which physical bin to place a product in, nor does it confirm placement.
+Limitation ù No real-time physical feedback loop: The ERP records wh
+at should happen; it does not verify what did happen at the bin level.
+2.4 RFID-Based Systems
+High-end distribution centres use RFID tags on pallets and cases, enabling passive scanning as goods move through a receiving gate.
+Limitation ù Hardware cost and
+ tagging requirement: RFID infrastructure (readers, portals, tags) is expensive. Each product must be pre-tagged, which requires supplier coordination.
+Limitation ù Granularity gap: RFID tracks pallet or case movement, not individual unit batch records. Th
+e document parsing problem at the item level remains unsolved.
+Limitation ù No unstructured document handling: RFID does not address the packing slip, invoice, or handwritten label problem at all.
+2.5 Comparison Summary
+Capability
+Barcode
+Template OCR
+ERP/
+EDI
+RFID
+Our System
+Handles handwriting
+No
+No
+No
+No
+Yes
+Handles new suppliers
+No
+No
+No
+Partial
+Yes
+Structured JSON output
+Partial
+Partial
+Yes
+Partial
+Yes
+Physical bin guidance
+No
+No
+No
+No
+Yes
+Supplier relationship graph
+No
+No
+Partial
+No
+Yes
+Low cost / no supplier coordination
+Partial
+Yes
+No
+No
+Yes
+3. Our Unique Solution
+3.1 Solution Overview
+The Agentic Supply Chain Clerk is an end-to-end agentic pipeline that uses a multimodal Vision-Language Model to transform any physical intake document ù printed, handwritten, crumpled, or multilingual ù into validated structured data, then simultaneously 
+updates a graph-based inventory record and directs 
+IoT
+ hardware to light the correct physical storage bin.
+The term "agentic" is deliberate. Unlike a static OCR tool, the system reasons about what it sees. It applies contextual understanding to resolve am
+biguous fields, flags low-confidence extractions for human review, and makes autonomous decisions about bin assignment based on product type, expiry date, and current stock levels ù all without requiring templates, pre-registration, or supplier coordinatio
+n.
+3.2 The Three-Layer Architecture Concept
+Layer 1: Perception (Multimodal AI)
+A high-resolution camera above the intake station captures the physical document. The image is passed to a Vision-Language Model (VLM) with a structured extraction prompt. The model returns a validated JSON object containing all 
+parseable
+ fields ù Batch No
+., Expiry Date, Quantity, Supplier Name, Product Name, Unit of Measure ù along with a per-field confidence score. The model handles printed text, handwriting, mixed scripts, partial occlusion, and image noise without any template configuration.
+Layer 2: In
+telligence (Graph Database + Business Logic)
+The 
+FastAPI
+ backend receives the JSON payload. It validates field formats (batch number patterns, date ranges, quantity bounds), then writes the record into a Neo4j graph database. The graph schema captures rela
+tionships: a Supplier node connects to Batch nodes, which connect to Product nodes, which connect to 
+StorageBin
+ nodes. This graph structure enables queries that flat relational databases cannot answer efficiently ù for example, "find all batches from Suppl
+ier X that expire within 30 days and are stored in Zone C." Simultaneously, the backend runs a bin assignment algorithm that selects the optimal bin based on product category, available capacity, and FEFO (First Expired, First Out) rules.
+Layer 3: Action (
+IoT
+ Hardware)
+The backend publishes a MQTT message containing the bin ID to an ESP32 microcontroller on the warehouse floor. The ESP32 drives an LED strip or individual LEDs mounted on the target bin, lighting it in a designated colour (green for standard 
+placement, amber for near-expiry, red for quarantine). The worker simply places the product in the illuminated bin. A confirmation button or IR sensor on the bin sends an acknowledgement back to the ESP32, which publishes a confirmation MQTT message, closi
+ng the feedback loop.
+3.3 Key Differentiators
+Zero template configuration: The VLM understands documents semantically, not by coordinate mapping. A new supplier requires no IT setup ù the first document from that supplier is processed correctly.
+Handwritin
+g as a first-class input: Handwritten batch numbers and expiry dates are extracted with the same pipeline as printed text, with confidence scoring to flag ambiguous characters.
+Graph-native traceability: Neo4j captures the full provenance graph ù supplier,
+ batch, product, bin, timestamp ù enabling instant recall impact assessment and audit trail generation.
+Closed-loop physical confirmation: The system does not just assign a bin; it verifies that the worker placed the product in the correct bin via sensor a
+cknowledgement, creating a physical audit trail.
+Digital twin dashboard: A React-based warehouse twin visualises the real-time state of every bin ù occupancy, product, expiry, and supplier ù without requiring a worker to physically inspect the warehouse.
+4. Project Goals
+4.1 Primary Goals
+Primary goals are the core deliverables that define whether the project has succeeded. Every sprint and engineering decision must be traceable to at least one primary goal.
+PG-1: Accurate Multimodal Document Extraction
+G
+oal: Achieve a field extraction accuracy of >= 90% on a test set of 50 documents covering printed invoices, handwritten packing slips, and mixed-format labels, measured by exact-match F1 score per field.
+This is the foundational goal. Every other system c
+omponent depends on reliable data at the extraction step. To achieve this, the team must: design a structured extraction prompt that instructs the VLM to return only valid JSON; implement a confidence scoring mechanism that flags fields below a threshold (
+0.75) for human review; and build a validation layer that checks field formats before writing to the database.
+Success metric: Field-level extraction F1 >= 0.90 across Batch No., Expiry Date, and Quantity fields on the test set.
+PG-2: Real-Time 
+IoT
+ Bin Guidance
+Goal: Within 8 seconds of document capture, the correct physical storage bin must be illuminated and the digital record must be created.
+This goal defines the user-facing performance of the system. The 8-second target acco
+unts for VLM inference time (~3û5 seconds), 
+FastAPI
+ processing and Neo4j write (~1 second), and MQTT message delivery to the ESP32 (<1 second). If the VLM call exceeds this budget, the system must display a visual processing indicator on the React dashboar
+d and pre-illuminate the most probable bin based on product category while the full inference completes.
+Success metric: 95th percentile end-to-end latency from camera capture to LED illumination is <= 8 seconds under normal Wi-Fi conditions.
+PG-3: Graph-B
+ased Traceability Record
+Goal: Every intake event must create a complete, 
+queryable
+ provenance chain in Neo4j: (Supplier)-[
+:SUPPLIED
+]->(Batch)-[:IS_OF]->(Product)-[:STORED_IN]->(Bin).
+This goal captures the compliance and auditability value of the system.
+ The graph schema must be designed such that the following queries can be answered in real time: (a) all batches from a given supplier in the last 30 days; (b) all products expiring within N days; (c) the full intake history for a specific bin; (d) all bin
+s affected if Supplier X is quarantined.
+Success metric: All four query types return correct results in < 200ms on a database containing 1,000 intake records.
+PG-4: Working End-to-End Demo
+Goal: A live demonstration must be deliverable in under 3 minutes: 
+scan a document, see JSON extraction on the dashboard, observe LED illumination, confirm placement, and show the updated graph and warehouse twin.
+This goal defines the demo narrative for the hackathon. The demo must be self-contained, resilient to Wi-Fi 
+instability, and scriptable. A 
+fallback
+ mode using USB serial communication from the laptop to the ESP32 must be implemented and tested. The React dashboard must update in real time via 
+WebSocket
+, not polling.
+Success metric: Demo completes without manual 
+intervention in 3 minutes on 5 consecutive dry runs.
+4.2 Secondary Goals
+Secondary goals are stretch objectives that add depth, publication potential, and long-term utility. They do not define project success but significantly increase its impact.
+SG-1: Comparative VLM Benchmarking for IEEE Publication
+Run the extraction test set through at least two VLMs (e.g., GPT-4o and Gemini 1.5 Pro) and compare field-level F1 scores, latency, and cost per document. Document the evaluation methodology, dataset 
+construction, and results in a format suitable for submission to an IEEE 
+IoT
+ or AI conference. The novel contribution is the framing: a systematic evaluation of Vision-Language Models for unstructured pharmaceutical document intake under real-world noise c
+onditions.
+Deliverable: A 4û6 page IEEE-formatted paper draft with benchmark tables, methodology, and discussion of failure modes (handwriting vs. print, document condition, language).
+SG-2: FEFO-Aware Bin Assignment Engine
+Extend the bin assignment logic 
+to implement First Expired, First 
+Out
+ (FEFO) placement rules. When two bins are available for the same product category, the engine must prefer the bin that will result in the nearest-expiry product being picked first. This requires the graph query to chec
+k existing occupancy expiry dates before assigning a new bin.
+Deliverable: A documented bin assignment algorithm with FEFO logic, tested against a simulated scenario of 100 sequential intakes.
+SG-3: Expiry Alert and Quarantine Workflow
+Implement an automated expiry monitoring workflow: a background job queries Neo4j every hour for products expiring within a configurable threshold (default: 30 days). Identified products trigger an amber LED pulse on their bin, a toast notification on the 
+React dashboard, and an entry in an alert log. Products past expiry trigger a red LED and a quarantine flag in the graph.
+Deliverable: Functional expiry monitoring job with configurable threshold, tested with seeded near-expiry data.
+SG-4: Supplier Relatio
+nship Analytics Panel
+Add a dedicated analytics panel to the React dashboard that visualises the Neo4j supplier graph ù showing each supplier node, the number of batches supplied, average batch quality score (if manually rated), and any active quarantine f
+lags. This panel provides warehouse managers with an at-a-glance supplier performance view.
+Deliverable: Interactive supplier graph panel using a React graph visualisation library (e.g., react-force-graph or Cytoscape.js), pulling live data from a 
+FastAPI
+ 
+graph endpoint.
+SG-5: Offline 
+Fallback
+ Mode
+Implement a lightweight offline extraction mode using a local open-source VLM (e.g., 
+LLaVA
+ via 
+Ollama
+) as a 
+fallback
+ when the primary cloud VLM API is unavailable. The system must detect API unavailability within
+ 3 seconds and switch to the local model automatically, with a visible indicator on the dashboard. This addresses the venue Wi-Fi risk and strengthens the real-world deployment story.
+Deliverable: 
+Ollama
+-based local 
+fallback
+ with automatic failover logic a
+nd dashboard indicator.
+5. System Architecture
+5.1 Architecture Overview
+The system is composed of five decoupled layers that communicate through well-defined interfaces. This decoupling is intentional ù each layer can be tested and replaced independentl
+y without affecting the others.
+Layer
+Component
+Technology
+Responsibility
+1. Capture
+Camera Module
+USB Camera / Pi Camera / Webcam
+Captures high-res image of document at intake station
+2. Perception
+VLM Agent
+GPT-4o or Gemini via API
+Extracts structured JSON from document image with confidence scores
+3. Intelligence
+Backend API
+Python 
+FastAPI
+ + 
+Pydantic
+Validates data, runs bin assignment, writes to Neo4j, publishes MQTT
+3. Intelligence
+Graph Database
+Neo4j Community Edition
+Stores and queries supplier-batch-product-bin provenance graph
+4. Action
+IoT
+ Controller
+ESP32 (C++) + MQTT broker
+Receives bin command, drives LEDs, reads confirmation sensor
+5. Presentation
+Dashboard
+React + 
+WebSocket
+Real-time warehouse digital twin, analytics, alert log
+5.2 Data Flow ù Step by Step
+Worker holds physical document under the camera. A button press (or automatic motion trigger) initiates a capture event.
+The camera module sends the image as base64-encoded JPEG to the 
+FastAPI
+ endpoint POST /intake/capture.
+FastAPI
+ forwards the image to the VLM API with the structured extraction prompt. The VLM returns a JSON object.
+FastAPI
+ validates the JSON against a 
+Pyda
+ntic
+ schema. Fields that fail validation or fall below confidence threshold are flagged and queued for human review via the dashboard.
+FastAPI
+ writes the validated record to Neo4j using the Cypher query driver, creating or merging Supplier, Batch, Product,
+ and intake-event nodes.
+FastAPI
+ runs the bin assignment query against Neo4j. The query returns the optimal bin ID based on product category, FEFO rules, and current occupancy.
+FastAPI
+ publishes an MQTT message to the topic warehouse/bin/light with payload
+ {
+bin_id
+, colour, 
+batch_no
+}.
+The ESP32 subscriber receives the MQTT message and drives the LED on the target bin (GPIO-controlled WS2812B strip or individual LED).
+The worker places the product in the illuminated bin and presses the confirmation button (or
+ triggers the IR sensor).
+ESP32 publishes confirmation to warehouse/bin/confirm. 
+FastAPI
+ receives confirmation, updates the Neo4j bin occupancy node, and emits a 
+WebSocket
+ event to the React dashboard.
+The React dashboard updates the warehouse twin in real time ù the bin changes state from "awaiting" to "occupied" with product details.
+5.3 Neo4j Graph Schema
+The graph schema is the central data model of the system. Every other component reads from or w
+rites to this schema.
+Node Types
+(:Supplier {id, name, contact, region, active: bool})
+(:Product {id, name, category, 
+unit_of_measure
+, 
+requires_cold_chain
+: bool})
+(:Batch {id, 
+batch_no
+, 
+expiry_date
+, 
+manufacture_date
+, quantity, 
+confidence_score
+, 
+intake_timestamp
+})
+(:
+StorageBin
+ {id, 
+bin_code
+, zone, capacity, 
+current_occupancy
+, 
+led_gpio_pin
+})
+(:
+IntakeEvent
+ {id, timestamp, 
+operator_id
+, 
+document_image_path
+, 
+raw_json
+})
+Re
+lationship Types
+(Supplier)-[:SUPPLIED {
+po_number
+, 
+invoice_no
+}]->(Batch)
+(Batch)-[:IS_OF]->(Product)
+(Batch)-[:STORED_IN {
+placed_at
+, confirmed: bool}]->(
+StorageBin
+)
+(Batch)-[:RECORDED_IN]->(
+IntakeEvent
+)
+(
+StorageBin
+)-[:IN_ZONE {
+zone_name
+}]->(Zone)
+5.4 MQT
+T Topic Schema
+Topic
+Direction
+Payload Description
+warehouse/bin/light
+API -> ESP32
+{
+bin_id
+: 
+str
+, colour: '
+green'|'amber'|'red
+', 
+batch_no
+: 
+str
+}
+warehouse/bin/confirm
+ESP32 -> API
+{
+bin_id
+: 
+str
+, confirmed: true, timestamp: ISO8601}
+warehouse/bin/status
+ESP32 -> API
+{
+bin_id
+: 
+str
+, 
+led_state
+: 
+str
+, occupancy: 
+int
+} ù heartbeat every 30s
+warehouse/alert
+API -> ESP32
+{
+bin_id
+: 
+str
+, 
+alert_type
+: '
+expiry'|'quarantine
+', message: 
+str
+}
+6. Tools and Techniques
+6.1 Hardware
+Component
+Model / Spec
+Purpose and Notes
+Microcontroller
+ESP32-WROOM
+Dual-core 240 MHz, built-in Wi-Fi and Bluetooth. Controls LED outputs and reads sensor inputs. Programmed in C++ using Arduino framework via 
+PlatformIO
+.
+Camera
+USB 1080p or Pi Camera v2
+Positioned overhead at 30û50 cm above document surface. Minimum resolution 1920x1080 for reliable handwriting capture. USB preferred for direct laptop connection.
+LED Indicators
+WS2812B 
+NeoPixel
+Addressable RGB LEDs driven via single GPIO pin. Each bin has 1û3 LEDs. Colour encodes: green (place here), amber (near-expiry), 
+red
+ (quarantine). 5V, 60mA max per LED.
+Confirmation Input
+Momentary push button or IR break-beam
+Mounted on each bin. Worker presses button after placing product. IR break-beam (TCRT5000) is a more elegant alternative ù placement automatically confirms without button press.
+Host Computer
+Laptop or Raspberry Pi 4
+Runs 
+FastAPI
+ server, MQTT broker (
+Mosquitto
+), Neo4j, and React dev server. Raspberry Pi 4 (4GB) is sufficient for demo scale.
+6.2 Software Stack
+Backend
+Python 3.11+: Primary backend language. Type annotations required throughout for clarity.
+FastAPI
+: ASGI web framework for the REST API and 
+WebSocket
+ server. Chosen for its native 
+async
+ support (critical for non-blocking VLM API calls) and automatic 
+OpenAPI
+ documentation generation.
+Pydantic
+ v2: Data validation for all incoming and outgoing payl
+oads. Every API request and response has an explicit 
+Pydantic
+ model. VLM JSON output is validated against the 
+IntakeRecord
+ schema before database write.
+Neo4j Python Driver (neo4j >= 5.x): Official 
+async
+ driver for Cypher query execution against Neo4j. All
+ database interactions use parameterised queries ù no string formatting of Cypher.
+paho-mqtt
+: MQTT client library for publishing bin commands and subscribing to confirmation events.
+Mosquitto
+: Lightweight open-source MQTT broker running locally. Handles me
+ssage routing between 
+FastAPI
+ and ESP32.
+Pillow + 
+OpenCV
+: Image 
+preprocessing
+ before VLM submission ù 
+deskewing
+, contrast normalisation, and resolution upscaling for low-quality captures.
+APScheduler
+: Background job scheduler for the expiry monitoring task (SG-3). Runs the Neo4j expiry query on a configurable interval.
+AI Layer
+OpenAI
+ GPT-4o (primary): Vision-Language Model for document extraction. Called via the official 
+openai
+ Python SDK.
+ The extraction prompt is versioned and stored separately ù not hardcoded in application logic.
+Google Gemini 1.5 Pro (secondary/benchmark): Used for the IEEE benchmark comparison (SG-1). Called via google-
+generativeai
+ SDK.
+Ollama
+ + 
+LLaVA
+ (offline 
+fallback
+): Local VLM runtime for SG-5. 
+Ollama
+ exposes a REST API identical to 
+OpenAI's
+, allowing a single client abstraction to switch between cloud and local models.
+Frontend
+React 18 + 
+Vite
+: Dashboard SPA. 
+Vite
+ provides fast HMR d
+uring development.
+WebSocket
+ (native browser API): Real-time updates from 
+FastAPI's
+ 
+WebSocket
+ endpoint. Preferred over polling for latency-sensitive bin state updates.
+react-force-graph
+ (or Cytoscape.js): Graph visualisation for the supplier relationship p
+anel (SG-4). Renders Neo4j graph query results as an interactive force-directed network.
+Tailwind CSS: Utility-first styling. No custom CSS files ù all styling via class composition.
+Recharts
+: Time-series charts for intake throughput and latency monitoring
+ panels.
+IoT
+ Firmware
+Arduino Framework (ESP32): C++ firmware written using the Arduino abstraction layer.
+PlatformIO
+ IDE: Build system and dependency manager for the ESP32 firmware. Preferred over Arduino IDE for its CLI support, dependency pinning, and V
+S Code integration.
+AsyncMqttClient
+: Non-blocking MQTT client library for ESP32. Critical ù a blocking MQTT client will cause LED update delays that break the real-time experience.
+FastLED
+: High-performance WS2812B LED control library for ESP32. Handles co
+lour mixing, brightness, and animation effects (gentle pulse for amber alert state).
+6.3 DevOps and Infrastructure
+Docker Compose: Single 
+docker-compose.yml
+ file starts Neo4j, 
+Mosquitto
+, and 
+FastAPI
+ in isolated containers. Developers do not need to instal
+l Neo4j or 
+Mosquitto
+ locally.
+Git + GitHub: Version control. Separate branches for firmware (esp32/main) and software (main). No force pushes to main.
+pytest
+ + 
+httpx
+: API integration tests. Every 
+FastAPI
+ endpoint has at least one happy-path and one error-p
+ath test. Tests run in CI before every merge.
+GitHub Actions: CI pipeline ù runs 
+pytest
+, 
+lints
+ Python with ruff, and builds the React app on every pull request.
+7. Complete Project Methodology
+7.1 Phase 0: Environment Setup (Day 1)
+All developers must co
+mplete Phase 0 before any feature work begins. This phase has no code output ù only a verified working environment.
+Step 0.1: Repository and Project Structure
+Create the 
+monorepo
+ with the following directory structure:
+supply-chain-clerk
+/
+  
+backend
+/          # 
+FastAPI
+ application
+    
+app
+/
+      
+api
+/          # Route handlers
+      
+models
+/       # 
+Pydantic
+ schemas
+      
+services
+/     # VLM client, Neo4j client, MQTT client
+      
+prompts
+/      # Versioned extraction prompts
+  
+firmware
+/         # ESP32 
+PlatformIO
+ project
+  
+frontend
+/         # React + 
+Vite
+ dashboard
+  
+docker-compose.yml
+  .
+env.example
+Step 0.2: Docker Compose Services
+The 
+docker-compose.yml
+ must define three services: neo4j (official image, ports 7474 and 7687
+, APOC plugin enabled), 
+mosquitto
+ (eclipse-
+mosquitto
+ image, ports 1883 and 9001), and 
+api
+ (the 
+FastAPI
+ application, built from backend/
+Dockerfile
+, 
+depends_on
+ neo4j and 
+mosquitto
+). Every developer runs 
+docker
+ compose up -d as the first command on a fresh cl
+one.
+Step 0.3: ESP32 Firmware Bootstrap
+Create the 
+PlatformIO
+ project in firmware/. The platformio.ini must pin: platform = espressif32 @ 6.4.0, framework = 
+arduino
+, and library dependencies 
+AsyncMqttClient
+ @ 0.9.0 and 
+FastLED
+ @ 3.6.0. Deploy the minimal h
+eartbeat firmware: ESP32 connects to Wi-Fi and 
+Mosquitto
+, publishes {"status": "online"} to warehouse/bin/status every 30 seconds, and subscribes to warehouse/bin/light. Verify receipt of test MQTT message from the backend before proceeding.
+7.2 Phase 1: V
+LM Extraction Pipeline (Days 2û3)
+Step 1.1: Design the Extraction Prompt
+The prompt is the most critical piece of engineering in the entire project. A poorly designed prompt produces inconsistent JSON structures that break downstream validation. The prompt
+ must be stored as a versioned text file at backend/app/prompts/v1_extraction.txt. The prompt structure must include: (a) a role instruction establishing the model as a pharmaceutical document parser; (b) an explicit instruction to return ONLY valid JSON w
+ith no surrounding prose; (c) a JSON schema definition with all expected fields, their types, and per-field confidence score; (d) handling instructions for ambiguous or illegible fields (return null with confidence 0.0, do not hallucinate); and (e) example
+ output for a handwritten document.
+Critical: The prompt must explicitly state 'If a field is illegible or absent, return null for the value and 0.0 for the confidence. Never invent or guess field values.' This prevents hallucination of batch numbers, whic
+h is a patient safety issue.
+Step 1.2: Build the VLM Service Client
+Create backend/app/services/vlm_client.py. This module must: (1) accept an image as bytes or a file path; (2) apply 
+OpenCV
+ 
+preprocessing
+ (grayscale, CLAHE contrast enhancement, Otsu thres
+hold); (3) encode the 
+preprocessed
+ image as base64 JPEG; (4) construct the API request with the versioned prompt; (5) call the VLM API with a 30-second timeout; (6) parse the response JSON; and (7) validate the parsed JSON against the 
+IntakeRecord
+ 
+Pydantic
+ model. If the VLM response is not valid JSON, retry once with a clarification suffix appended to the prompt. If the second attempt fails, raise an 
+ExtractionFailureException
+ that the API layer will catch and return as a 422 with a human-review flag.
+Step 1.3: Build the Validation Schema
+Create backend/app/models/intake_record.py. The 
+Pydantic
+ model must define: 
+batch_no
+ (
+str
+, 
+min_length
+=4, 
+max_length
+=30, confidence: float 0û1), 
+expiry_date
+ (date, must be in the future, confidence: float), quantity (
+in
+t
+, 
+gt
+=0, confidence: float), 
+supplier_name
+ (
+str
+, confidence: float), 
+product_name
+ (
+str
+, confidence: float), 
+unit_of_measure
+ (
+str
+, default 'units', confidence: float). A computed property 
+overall_confidence
+ returns the mean of all field confidences. Records
+ with 
+overall_confidence
+ < 0.75 are flagged as NEEDS_REVIEW.
+Step 1.4: Build the Test Harness
+Assemble a test dataset of 50 documents: 20 printed invoices (varying suppliers and templates), 20 handwritten packing slips (varying legibility), and 10 mixed-fo
+rmat or partially damaged documents. Store images in tests/fixtures/documents/ with corresponding ground-truth JSON files. Write a 
+pytest
+ suite that runs all 50 images through the VLM client and computes field-level F1 against ground truth. This test suite
+ is not part of CI (too slow and costly) but must be run once per major prompt change.
+7.3 Phase 2: Backend API and Neo4j Integration (Days 3û4)
+Step 2.1: Neo4j Schema Initialisation
+Write a schema initialisation script at backend/app/services/neo4j_setup.
+py. On 
+startup
+, the script must create: uniqueness constraints on Supplier.id, Product.id, 
+Batch.batch_no
+, 
+StorageBin.bin_code
+; composite index on Batch(
+expiry_date
+, 
+product_id
+) for the expiry monitoring query; and seed data for the demo (5 supplier nodes,
+ 10 product nodes, 20 bin nodes with their LED GPIO pin assignments).
+Step 2.2: Implement the /intake/capture Endpoint
+This is the primary endpoint. It accepts a multipart form upload (the document image) and an optional 
+operator_id
+. The handler must: (1) 
+call the VLM service; (2) validate the result; (3) if validation passes, run the bin assignment query; (4) write the intake event and batch nodes to Neo4j; (5) publish the MQTT bin lighting command; (6) return a JSON response containing the extracted recor
+d, assigned bin, confidence scores, and a 
+review_required
+ flag. The entire handler must be 
+async
+. The Neo4j write and MQTT publish must be awaited concurrently using 
+asyncio.gather
+(
+) to minimise latency.
+Step 2.3: Implement the Bin Assignment Algorithm
+The
+ bin assignment Cypher query must: (1) filter bins in the correct zone for the product category; (2) exclude bins that are full (
+current_occupancy
+ >= capacity); (3) for FEFO compliance, prefer bins that already contain the same product with earlier expiry 
+dates; (4) if no FEFO-preferable bin exists, return the bin with the lowest 
+current_occupancy
+. Implement this as a single parameterised Cypher query in backend/app/services/bin_assigner.py. The query must not perform any Python-side filtering ù all logic m
+ust be in Cypher for performance.
+Step 2.4: Implement the 
+WebSocket
+ Event Bus
+The 
+FastAPI
+ app must maintain a connection manager that tracks all active 
+WebSocket
+ clients (React dashboard instances). When a new intake event is processed, the confirmation received from ESP32, or an expiry alert triggered, the connection manager broadc
+asts the relevant event to all connected clients. Events are typed JSON objects with an 
+event_type
+ field: INTAKE_CREATED, BIN_CONFIRMED, EXPIRY_ALERT, 
+SYSTEM
+_STATUS.
+7.4 Phase 3: ESP32 Firmware (Days 3û4, parallel with Phase 2)
+Step 3.1: MQTT Command Handl
+ing
+The firmware subscribes to warehouse/bin/light. On receipt, it parses the JSON payload to extract 
+bin_id
+ and colour. It maps 
+bin_id
+ to a GPIO pin index using a statically defined array (BIN_MAP) ù for the demo, define 5 bins with their corresponding 
+Fa
+stLED
+ strip indices. It then calls the LED control function with the appropriate colour value.
+Step 3.2: LED State Machine
+Implement a simple state machine for each bin's LED: OFF (no occupant pending), AWAITING (lit solid, awaiting placement), CONFIRMED (
+brief 2-second green flash, then off), ALERT_EXPIRY (slow amber pulse at 1Hz), ALERT_QUARANTINE (fast red blink at 4Hz). State transitions are triggered by MQTT messages for AWAITING and ALERT states, and by the confirmation sensor for CONFIRMED.
+Step 3.3:
+ Confirmation Sensor Reading
+In the Arduino 
+loop(
+), poll the confirmation button (or IR sensor) for each active bin. 
+Debounce
+ the input with a 50ms delay. On confirmed press, publish to warehouse/bin/confirm with the 
+bin_id
+ and a 
+Unix
+ timestamp. Transition
+ the bin LED to CONFIRMED state. The button/sensor polling must be non-blocking ù use 
+millis
+(
+)-based timing, never delay() in the main loop.
+7.5 Phase 4: React Dashboard (Days 4û5)
+Step 4.1: Warehouse Grid Component
+Build a 
+BinGrid
+ component that renders a
+ configurable grid of 
+BinCard
+ components (one per physical bin). Each 
+BinCard
+ displays: bin code, current LED state (colour-coded badge), product name and batch no. if occupied, expiry date if occupied, and a NEEDS_REVIEW badge if the intake record has low
+ confidence. 
+BinCard
+ state is driven by 
+WebSocket
+ events ù the component subscribes to the event bus on mount and updates local state on INTAKE_CREATED and BIN_CONFIRMED events.
+Step 4.2: Live Intake Feed Panel
+Build a 
+LiveIntakeFeed
+ component that shows t
+he last 20 intake events as a scrollable list. Each entry shows: timestamp, product name, batch no., assigned bin, overall confidence score (colour-coded: green >= 0.90, amber 0.75û0.89, red < 0.75), and a Review button for records flagged NEEDS_REVIEW. Th
+e Review button opens a modal showing the original document image alongside the extracted JSON, allowing the operator to manually correct any field.
+Step 4.3: System Status Bar
+A persistent top bar showing: VLM API status (green/red indicator, last success
+ful call timestamp), Neo4j connection status, MQTT broker connection status, ESP32 heartbeat status (last seen timestamp from warehouse/bin/status), and a rolling metric of average end-to-end latency for the last 10 intake events.
+7.6 Phase 5: Integration 
+Testing and Demo Hardening (Day 5)
+Step 5.1: End-to-End Integration Test
+Write a single integration test script at tests/e2e/test_full_flow.py that: (1) submits a test document image to the capture endpoint; (2) subscribes to MQTT and verifies the bin lighting command arrives within 8 seconds; (3) publishes a simulated confirma
+tion MQTT message; (4) queries Neo4j directly and verifies the batch node was created with the correct attributes; and (5) verifies the 
+WebSocket
+ emitted a BIN_CONFIRMED event. This test must pass 5 consecutive times before Phase 5 is considered complete.
+Step 5.2: 
+Fallback
+ Implementation
+Implement the USB serial 
+fallback
+ for the demo. If the MQTT publish fails (broker unreachable), the 
+FastAPI
+ backend must automatically attempt to send the bin command via 
+pyserial
+ to the ESP32 connected via USB. The ESP32 
+firmware must listen on the serial port (115200 baud) for JSON commands using the same schema as MQTT payloads. This 
+fallback
+ must activate within 3 seconds of MQTT failure with no change to the observable demo behaviour.
+Step 5.3: Demo Script
+Document the
+ 3-minute demo script in DEMO.md with these beats: (1) 0:00 ù introduce the problem with a crumpled handwritten invoice held up to the camera; (2) 0:30 ù press capture, watch JSON appear on dashboard with confidence scores; (3) 1:00 ù LED illuminates on co
+rrect bin, worker places product; (4) 1:30 ù confirmation triggers, bin card updates to occupied in the digital twin; (5) 2:00 ù navigate to supplier graph panel, show the new batch-supplier relationship; (6) 2:30 ù run the expiry query, show amber alert; 
+(7) 3:00 ù summarise latency from status bar.
+8. Risk Register
+Risk
+Likelihood
+Impact
+Mitigation
+VLM API latency > 8s at peak
+Medium
+High
+Pre-light most-probable bin while inference runs. Show animated spinner on dashboard.
+Wi-Fi drop at venue
+High
+High
+USB serial 
+fallback
+ for ESP32 (Step 5.2). Mobile hotspot as Wi-Fi backup.
+Neo4j write failure under load
+Low
+Medium
+Use MERGE instead of CREATE in all Cypher writes ù idempotent, safe to retry.
+Poor image quality ù handwriting illegible
+Medium
+Medium
+OpenCV
+ 
+preprocessing
+ mandatory. Demo documents pre-selected for legibility. NEEDS_REVIEW workflow handles edge cases gracefully.
+ESP32 firmware crash / LED freeze
+Low
+Medium
+Enable ESP32 watchdog timer (WDT) with 10s timeout. Keep firmware minimal ù no heavy computation on device.
+9. Suggested Development Schedule
+Day
+Phase
+Deliverable
+Owner(s)
+1
+Phase 0
+Docker Compose running, ESP32 heartbeat verified, repo structured
+All developers
+2
+Phase 1
+Extraction prompt v1, VLM client, 
+Pydantic
+ schema, test harness
+AI/Backend dev
+3
+Phase 2 + 3
+/intake/capture endpoint, Neo4j schema, bin assigner, ESP32 LED state machine
+Backend + Firmware 
+devs
+4
+Phase 2 + 4
+WebSocket
+ bus, React 
+BinGrid
+, 
+LiveIntakeFeed
+, MQTT confirmation loop
+Frontend + Backend 
+devs
+5
+Phase 5
+E2E integration test passing x5, USB 
+fallback
+, demo script rehearsed
+All developers
+ù End of Document ù

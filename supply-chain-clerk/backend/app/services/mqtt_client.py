@@ -27,6 +27,8 @@ log = logging.getLogger(__name__)
 
 _BROKER = os.getenv("MQTT_BROKER", "localhost")
 _PORT = int(os.getenv("MQTT_PORT", 1883))
+_USERNAME = os.getenv("MQTT_USERNAME")
+_PASSWORD = os.getenv("MQTT_PASSWORD")
 
 # Topics
 TOPIC_LIGHT   = "warehouse/bin/light"
@@ -43,6 +45,13 @@ class MQTTManager:
     # ── Lifecycle ─────────────────────────────────────────────────────────────
     async def start(self) -> None:
         self._client = mqtt.Client(client_id="supply-chain-clerk-backend")
+        
+        if _USERNAME and _PASSWORD:
+            self._client.username_pw_set(_USERNAME, _PASSWORD)
+        
+        if _PORT == 8883:
+            self._client.tls_set()
+
         self._client.on_connect    = self._on_connect
         self._client.on_message    = self._on_message
         self._client.on_disconnect = self._on_disconnect

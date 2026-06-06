@@ -19,7 +19,8 @@ export function useSystemStatus() {
 
   const poll = async () => {
     try {
-      const res = await fetch('http://localhost:8000/status');
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+      const res = await fetch(`${baseUrl}/status`);
       if (res.ok) setStatus(await res.json());
     } catch (_) {}
   };

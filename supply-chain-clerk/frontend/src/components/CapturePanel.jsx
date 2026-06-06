@@ -54,7 +54,8 @@ export default function CapturePanel({ onCapture }) {
     try {
       const form = new FormData();
       form.append('file', file);
-      const res = await fetch('http://localhost:8000/intake/capture', {
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+      const res = await fetch(`${baseUrl}/intake/capture`, {
         method: 'POST',
         body: form,
       });

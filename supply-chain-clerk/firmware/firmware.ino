@@ -24,10 +24,13 @@
 #include <ArduinoJson.h>
 
 // ── WiFi / MQTT config ────────────────────────────────────────────────────────
-const char* SSID        = "YOUR_WIFI_SSID";
-const char* WIFI_PASS   = "YOUR_WIFI_PASSWORD";
-const char* MQTT_SERVER = "192.168.1.100";   // ← replace with host IP
-const int   MQTT_PORT   = 1883;
+// ⚠️ Update your WiFi credentials before compiling ⚠️
+const char* SSID        = "YOUR_WIFI_SSID";          // Your actual WiFi network name
+const char* WIFI_PASS   = "YOUR_WIFI_PASSWORD";      // Your actual WiFi password
+const char* MQTT_SERVER = "da26c5b9a71a4180ae338a5ffb38070a.s1.eu.hivemq.cloud";
+const int   MQTT_PORT   = 8883;                      // 8883 for secure Cloud MQTT
+const char* MQTT_USER   = "MoSDGo";                  // HiveMQ Cloud username
+const char* MQTT_PASS   = "aERTdfr!67%34&*^%rdfsyt"; // HiveMQ Cloud password
 const char* CLIENT_ID   = "esp32-warehouse-01";
 
 // ── LED config ────────────────────────────────────────────────────────────────
@@ -70,7 +73,8 @@ unsigned long lastButtonTime[NUM_BINS] = {0};
 const unsigned long DEBOUNCE_MS = 50;
 
 // ── MQTT ──────────────────────────────────────────────────────────────────────
-WiFiClient   wifiClient;
+#include <WiFiClientSecure.h>
+WiFiClientSecure wifiClient;
 PubSubClient mqttClient(wifiClient);
 
 // ── Heartbeat ─────────────────────────────────────────────────────────────────
@@ -109,6 +113,7 @@ void setup() {
   }
 
   // MQTT
+  wifiClient.setInsecure(); // Allow connection to TLS without checking certificate
   mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
   mqttClient.setCallback(mqttCallback);
   connectMQTT();
@@ -259,7 +264,7 @@ void processSerialCommand(const String& line) {
 void connectMQTT() {
   int attempts = 0;
   while (!mqttClient.connected() && attempts < 5) {
-    if (mqttClient.connect(CLIENT_ID)) {
+    if (mqttClient.connect(CLIENT_ID, MQTT_USER, MQTT_PASS)) {
       mqttClient.subscribe("warehouse/bin/light");
     } else {
       delay(1000);
