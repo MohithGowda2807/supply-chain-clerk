@@ -1,9 +1,8 @@
-/**
- * CapturePanel — document upload + Gemini extraction result display.
- */
 import React, { useState, useRef } from 'react';
+import { Camera, UploadCloud, Info, AlertTriangle, CheckCircle2, Loader2, FastForward } from 'lucide-react';
 
 function ConfidencePill({ value }) {
+  if (value === undefined || value === null) return null;
   const pct = Math.round(value * 100);
   const cls = value >= 0.9 ? 'high' : value >= 0.75 ? 'medium' : 'low';
   return <span className={`confidence-pill ${cls}`}>{pct}%</span>;
@@ -71,15 +70,24 @@ export default function CapturePanel({ onCapture }) {
   };
 
   return (
-    <div className="panel capture-panel">
-      <div className="panel-header">
-        <span className="panel-title"><span className="icon">📷</span> Document Capture</span>
+    <div className="intake-column">
+      {/* Operating Instructions — compact horizontal layout */}
+      <div className="instructions-card">
+        <h2><Info size={18} /> Operating Instructions</h2>
+        <ul className="instructions-list">
+          <li><span className="step-number">1</span> Place item box on conveyor entry.</li>
+          <li><span className="step-number">2</span> Capture or drop the supplier invoice below.</li>
+          <li><span className="step-number">3</span> Verify assigned bin on screen.</li>
+          <li><span className="step-number">4</span> Wait for IoT conveyor to auto-route the box.</li>
+        </ul>
       </div>
 
-      <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {/* Capture Panel */}
+      <div className="capture-panel">
+        
         {/* Drop zone */}
         <div
-          className={`upload-zone ${dragOver ? 'drag-over' : ''}`}
+          className={`upload-zone ${dragOver ? 'drag-over' : ''} ${preview ? 'has-preview' : ''}`}
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
           onDragLeave={() => setDragOver(false)}
           onDrop={handleDrop}
@@ -96,9 +104,11 @@ export default function CapturePanel({ onCapture }) {
             <img src={preview} alt="preview" className="preview-image" />
           ) : (
             <>
-              <span className="upload-icon">📄</span>
-              <div className="upload-text">Drop invoice / packing slip here</div>
-              <div className="upload-subtext">JPEG, PNG, or scanned PDF image · any handwriting</div>
+              <div className="upload-icon">
+                <UploadCloud size={36} />
+              </div>
+              <div className="upload-text">Drop Invoice Document Here</div>
+              <div className="upload-subtext">Supports JPEG, PNG, scanned PDF, or handwriting.</div>
             </>
           )}
         </div>
@@ -111,21 +121,17 @@ export default function CapturePanel({ onCapture }) {
           id="btn-capture"
         >
           {loading ? (
-            <><div className="spinner" /> Extracting with Gemini…</>
+            <><Loader2 className="spinner" size={18} /> Processing AI Extraction...</>
           ) : (
-            <><span>⚡</span> Capture & Process</>
+            <><Camera size={18} /> Capture & Process</>
           )}
         </button>
 
         {/* Error */}
         {error && (
-          <div style={{
-            background: 'rgba(239,68,68,0.1)',
-            border: '1px solid rgba(239,68,68,0.25)',
-            borderRadius: 8, padding: '10px 12px',
-            fontSize: 12, color: '#ef4444'
-          }}>
-            ⚠ {error}
+          <div className="error-alert">
+            <AlertTriangle size={18} style={{ flexShrink: 0 }} />
+            <span>{error}</span>
           </div>
         )}
 
@@ -134,13 +140,18 @@ export default function CapturePanel({ onCapture }) {
           <>
             <div className="assigned-bin-banner">
               <div>
-                <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 2 }}>Assigned Bin</div>
+                <div style={{ fontSize: 12, color: '#166534', fontWeight: 700, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <CheckCircle2 size={14} />
+                  Assigned Bin
+                </div>
                 <div className="bin-code">{result.assigned_bin}</div>
               </div>
-              <div style={{ textAlign: 'right' }}>
+              <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
                 <ConfidencePill value={result.overall_confidence} />
                 {result.review_required && (
-                  <div style={{ fontSize: 11, color: 'var(--accent-red)', marginTop: 4 }}>⚠ Needs Review</div>
+                  <div style={{ fontSize: 11, color: '#DC2626', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <AlertTriangle size={12} /> Needs Review
+                  </div>
                 )}
               </div>
             </div>
@@ -152,8 +163,10 @@ export default function CapturePanel({ onCapture }) {
               <Field label="Expiry"          field={result.record.expiry_date} />
               <Field label="Quantity"        field={result.record.quantity} />
               <Field label="Unit"            field={result.record.unit_of_measure} />
-              <div className="result-field">
-                <span className="result-label">Latency</span>
+              <div className="result-field" style={{ marginTop: 8, paddingTop: 8, borderTop: '2px dashed var(--border)'}}>
+                <span className="result-label" style={{ display: 'flex', alignItems: 'center', gap: 6}}>
+                  <FastForward size={12}/> Parsing Latency
+                </span>
                 <span className="result-value" style={{ color: 'var(--accent-cyan)' }}>
                   {result.latency_ms} ms
                 </span>

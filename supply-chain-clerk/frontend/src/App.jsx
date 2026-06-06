@@ -9,6 +9,7 @@
  */
 import React, { useState, useCallback } from 'react';
 import SystemStatusBar from './components/SystemStatusBar';
+import HardwareDashboard from './components/HardwareDashboard';
 import CapturePanel    from './components/CapturePanel';
 import BinGrid         from './components/BinGrid';
 import LiveIntakeFeed  from './components/LiveIntakeFeed';
@@ -80,9 +81,12 @@ export default function App() {
       <SystemStatusBar status={status} avgLatency={avgLatency} />
 
       <div className="main-layout">
+        <HardwareDashboard recentEvent={events[0]} bins={bins} status={status} />
         <CapturePanel onCapture={handleCapture} />
-        <BinGrid bins={bins} />
-        <LiveIntakeFeed events={events} />
+        <div className="right-column">
+          <BinGrid bins={bins} />
+          <LiveIntakeFeed events={events} />
+        </div>
       </div>
     </div>
   );

@@ -24,7 +24,7 @@ client = genai.Client(api_key=_API_KEY)
 _PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "v1_extraction.txt"
 PROMPT = _PROMPT_PATH.read_text(encoding="utf-8")
 
-_MODEL = "gemini-2.0-flash"
+_MODEL = "gemini-2.5-flash"
 
 
 # ── Image pre-processing ──────────────────────────────────────────────────────
@@ -60,7 +60,7 @@ async def extract_from_document(image_bytes: bytes) -> dict:
     processed = preprocess_image(image_bytes)
     b64_data = base64.b64encode(processed).decode()
 
-    response = client.models.generate_content(
+    response = await client.aio.models.generate_content(
         model=_MODEL,
         contents=[
             types.Part.from_text(text=PROMPT),

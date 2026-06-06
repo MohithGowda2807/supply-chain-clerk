@@ -13,6 +13,8 @@
     "vite": "^8.0.10"
   },
   "dependencies": {
+    "framer-motion": "^12.40.0",
+    "lucide-react": "^1.17.0",
     "react-force-graph-2d": "^1.29.1",
     "recharts": "^3.8.1"
   }

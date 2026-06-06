@@ -46,11 +46,11 @@ struct BinDef {
 };
 
 const BinDef BIN_MAP[] = {
-  {"A01", 0,  32},
-  {"A02", 1,  33},
-  {"A03", 2,  34},
-  {"A04", 3,  35},
-  {"A05", 4,  36},
+  {"A01", 0,  32}, // GPIO 32 has internal pull-up
+  {"A02", 1,  33}, // GPIO 33 has internal pull-up
+  {"A03", 2,  25}, // GPIO 25 has internal pull-up (replaces GPIO 34 which is input-only)
+  {"A04", 3,  26}, // GPIO 26 has internal pull-up (replaces GPIO 35 which is input-only)
+  {"A05", 4,  27}, // GPIO 27 has internal pull-up (replaces GPIO 36 which is input-only)
 };
 const int NUM_BINS = sizeof(BIN_MAP) / sizeof(BIN_MAP[0]);
 

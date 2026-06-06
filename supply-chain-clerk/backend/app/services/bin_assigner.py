@@ -42,7 +42,8 @@ async def assign_bin(product_category: str, product_name: str) -> Optional[str]:
                  bin.current_occupancy AS occ
             RETURN bin.bin_code AS bin_code
             ORDER BY
-                earliest_expiry ASC NULLS LAST,
+                CASE WHEN earliest_expiry IS NULL THEN 1 ELSE 0 END ASC,
+                earliest_expiry ASC,
                 occ ASC
             LIMIT 1
             """,
@@ -83,21 +84,19 @@ async def write_intake_event(
             ON CREATE SET p.id = 'P-AUTO-' + toString(id(p)),
                           p.category = 'unknown', p.unit = $unit_of_measure
 
-            CREATE (b:Batch {
-                batch_no:        $batch_no,
-                product_name:    $product_name,
-                expiry_date:     $expiry_date,
-                quantity:        $quantity,
-                unit_of_measure: $unit_of_measure,
-                confidence:      $confidence,
-                intake_timestamp: datetime()
-            })
+            MERGE (b:Batch {batch_no: $batch_no})
+            ON CREATE SET b.product_name = $product_name,
+                          b.expiry_date = $expiry_date,
+                          b.quantity = $quantity,
+                          b.unit_of_measure = $unit_of_measure,
+                          b.confidence = $confidence,
+                          b.intake_timestamp = datetime()
 
             MERGE (bin:StorageBin {bin_code: $bin_code})
 
-            CREATE (s)-[:SUPPLIED]->(b)
-            CREATE (b)-[:IS_A]->(p)
-            CREATE (b)-[:STORED_IN]->(bin)
+            MERGE (s)-[:SUPPLIED]->(b)
+            MERGE (b)-[:IS_A]->(p)
+            MERGE (b)-[:STORED_IN]->(bin)
 
             SET bin.current_occupancy = bin.current_occupancy + 1
 
