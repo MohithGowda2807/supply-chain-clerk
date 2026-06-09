@@ -31,7 +31,8 @@ _CURRENT_CLIENT_INDEX = 0
 _PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "v1_extraction.txt"
 PROMPT = _PROMPT_PATH.read_text(encoding="utf-8")
 
-_MODEL = "gemini-2.5-flash"
+_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+_CURRENT_MODEL_INDEX = 0
 
 
 # ── Image pre-processing ──────────────────────────────────────────────────────
@@ -58,21 +59,22 @@ def preprocess_image(image_bytes: bytes) -> bytes:
 async def extract_from_document(image_bytes: bytes) -> dict:
     """
     Send *image_bytes* to Gemini and return the raw parsed JSON dict.
-    Automatically rotates through available API keys on 503 or 429 errors.
+    Automatically rotates through available API keys and models on 503 or 429 errors.
     """
-    global _CURRENT_CLIENT_INDEX
+    global _CURRENT_CLIENT_INDEX, _CURRENT_MODEL_INDEX
 
     processed = preprocess_image(image_bytes)
     b64_data = base64.b64encode(processed).decode()
 
-    max_retries = max(len(_CLIENTS) * 2, 3)
+    max_retries = max(len(_CLIENTS) * len(_MODELS), 5)
     last_exc = None
 
     for attempt in range(max_retries):
         client = _CLIENTS[_CURRENT_CLIENT_INDEX]
+        model = _MODELS[_CURRENT_MODEL_INDEX]
         try:
             response = await client.aio.models.generate_content(
-                model=_MODEL,
+                model=model,
                 contents=[
                     types.Part.from_text(text=PROMPT),
                     types.Part.from_bytes(
@@ -97,7 +99,14 @@ async def extract_from_document(image_bytes: bytes) -> dict:
         except Exception as exc:
             exc_str = str(exc)
             if any(err in exc_str for err in ("503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED", "Too Many Requests")):
-                _CURRENT_CLIENT_INDEX = (_CURRENT_CLIENT_INDEX + 1) % len(_CLIENTS)
+                # If it's a 503 High Demand, the model is overloaded, switch models
+                if "503" in exc_str or "UNAVAILABLE" in exc_str:
+                    _CURRENT_MODEL_INDEX = (_CURRENT_MODEL_INDEX + 1) % len(_MODELS)
+                
+                # If it's a 429 Rate Limit, our key is exhausted, switch keys
+                if "429" in exc_str or "RESOURCE_EXHAUSTED" in exc_str or "Too Many Requests" in exc_str:
+                    _CURRENT_CLIENT_INDEX = (_CURRENT_CLIENT_INDEX + 1) % len(_CLIENTS)
+                
                 last_exc = exc
                 await asyncio.sleep(2.0)
                 continue
