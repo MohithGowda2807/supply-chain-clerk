@@ -1,0 +1,38 @@
+{
+  "lang":"en",
+  "name":"pipeline",
+  "version":"0.0.0",
+  "spacy_version":">=3.8.13,<3.9.0",
+  "description":"",
+  "author":"",
+  "email":"",
+  "url":"",
+  "license":"",
+  "spacy_git_version":"fdca647",
+  "vectors":{
+    "width":0,
+    "vectors":0,
+    "keys":0,
+    "name":null,
+    "mode":"default"
+  },
+  "labels":{
+    "ner":[
+      "batch_no",
+      "expiry_date",
+      "product_name",
+      "quantity",
+      "supplier_name",
+      "unit_of_measure"
+    ]
+  },
+  "pipeline":[
+    "ner"
+  ],
+  "components":[
+    "ner"
+  ],
+  "disabled":[
+
+  ]
+}

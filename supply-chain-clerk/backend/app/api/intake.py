@@ -17,7 +17,7 @@ from typing import Optional
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from app.models.intake_record import IntakeRecord, IntakeResponse
-from app.services import vlm_client, bin_assigner
+from app.services import local_ai_client, bin_assigner
 from app.services.mqtt_client import mqtt_manager
 from app.services.serial_fallback import send_bin_command_serial
 from app.services.ws_manager import ws_manager
@@ -49,10 +49,10 @@ async def capture_intake(
     t_start = time.perf_counter()
 
     try:
-        # ── 1. VLM Extraction ────────────────────────────────────────────────────
+        # ── 1. Local AI Extraction (OCR + NER) ───────────────────────────────────
         image_bytes = await file.read()
         try:
-            raw = await vlm_client.extract_from_document(image_bytes)
+            raw = await local_ai_client.extract_from_document(image_bytes)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
 
