@@ -117,7 +117,7 @@ class MQTTManager:
 
         payload = json.dumps({
             "bin_id":    bin_code,
-            "colour":    colour,
+            "color":     colour,
             "led_index": led_index,
             "ts":        int(time.time()),
         })

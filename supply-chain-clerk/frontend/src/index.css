@@ -645,6 +645,11 @@ body {
   overflow: hidden;
   box-shadow: 0 1px 3px rgba(0,0,0,0.02);
   min-width: 0;
+  min-height: 68px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
 }
 
 .bin-card::before {
