@@ -25,21 +25,6 @@ from app.services.ws_manager import ws_manager
 log = logging.getLogger(__name__)
 router = APIRouter()
 
-# Product category lookup (extend as needed)
-_CATEGORY_MAP = {
-    "herbal":     ["ashwagandha", "turmeric", "tulsi", "neem"],
-    "analgesic":  ["paracetamol", "ibuprofen", "aspirin"],
-    "supplement": ["vitamin", "omega", "multivitamin", "fish oil"],
-}
-
-
-def _infer_category(product_name: str) -> str:
-    name_lower = product_name.lower()
-    for category, keywords in _CATEGORY_MAP.items():
-        if any(kw in name_lower for kw in keywords):
-            return category
-    return "herbal"  # default zone
-
 
 @router.post("/capture", response_model=IntakeResponse)
 async def capture_intake(
@@ -61,7 +46,7 @@ async def capture_intake(
 
         # ── 3. Bin Assignment (async, pure Cypher) ────────────────────────────────
         product_name = record.product_name.value or "Unknown"
-        category = _infer_category(product_name)
+        category = local_ai_client.classify_product(product_name)
         assigned_bin = await bin_assigner.assign_bin(category, product_name)
 
         if assigned_bin is None:

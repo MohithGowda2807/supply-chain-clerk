@@ -11,7 +11,7 @@ build/
 .mypy_cache/
 htmlcov/
 .coverage
-
+ml_architecture_explanation.md
 # Environment
 .env
 *.env.local
@@ -20,7 +20,7 @@ htmlcov/
 node_modules/
 frontend/dist/
 frontend/.vite/
-
+frontend/.firebase/
 # IDE
 .vscode/
 .idea/

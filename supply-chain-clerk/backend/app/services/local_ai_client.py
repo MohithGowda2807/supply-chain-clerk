@@ -12,17 +12,51 @@ import spacy
 
 log = logging.getLogger(__name__)
 
-# Initialize ML models once at startup
-log.info("Loading Custom Local AI models...")
-_READER = easyocr.Reader(['en'], gpu=False) # CPU inference
+_READER = None
+_NLP = None
+_CLASSIFIER = None
 
-_MODEL_PATH = Path(__file__).parent.parent.parent / "invoice_ner_model"
-if _MODEL_PATH.exists():
-    _NLP = spacy.load(str(_MODEL_PATH))
-    log.info("Custom NLP model loaded successfully.")
-else:
-    log.error("Custom NLP model not found at %s. Please run train_ner.py", _MODEL_PATH)
-    _NLP = None
+def get_reader():
+    global _READER
+    if _READER is None:
+        import easyocr
+        log.info("Downloading and loading EasyOCR model for the first time...")
+        _READER = easyocr.Reader(['en'], gpu=False) # CPU inference
+    return _READER
+
+def get_nlp():
+    global _NLP
+    if _NLP is None:
+        import spacy
+        model_path = Path(__file__).parent.parent.parent / "invoice_ner_model"
+        if model_path.exists():
+            log.info("Loading Custom NLP model successfully.")
+            _NLP = spacy.load(str(model_path))
+        else:
+            log.error("Custom NLP model not found at %s", model_path)
+    return _NLP
+
+def get_classifier():
+    global _CLASSIFIER
+    if _CLASSIFIER is None:
+        import joblib
+        model_path = Path(__file__).parent.parent.parent / "product_classifier.joblib"
+        if model_path.exists():
+            log.info("Loading Scikit-Learn Product Classifier...")
+            _CLASSIFIER = joblib.load(model_path)
+        else:
+            log.error("Product classifier not found at %s", model_path)
+    return _CLASSIFIER
+
+def classify_product(product_name: str) -> str:
+    """Uses ML to categorize a product name into herbal, analgesic, or supplement."""
+    classifier = get_classifier()
+    if classifier is None:
+        return "herbal" # Fallback if model missing
+    
+    # Predict returns an array, we grab the first item
+    prediction = classifier.predict([product_name])[0]
+    return prediction
 
 def preprocess_image(image_bytes: bytes) -> np.ndarray:
     """Convert bytes to a numpy array suitable for EasyOCR"""
@@ -40,22 +74,20 @@ async def extract_from_document(image_bytes: bytes) -> dict:
     1. OCR via EasyOCR
     2. NER via Custom SpaCy Model
     """
-    if _NLP is None:
-        raise ValueError("Custom NLP model is missing. Cannot process document.")
-        
-    log.info("Starting local OCR processing...")
-    # Offload image processing and OCR to a separate thread since it's blocking
-    loop = asyncio.get_running_loop()
-    
     def _process():
+        nlp = get_nlp()
+        if nlp is None:
+            raise ValueError("Custom NLP model is missing. Cannot process document.")
+            
+        reader = get_reader()
         img_array = preprocess_image(image_bytes)
         # 1. OCR
-        results = _READER.readtext(img_array, detail=0, paragraph=True)
+        results = reader.readtext(img_array, detail=0, paragraph=True)
         raw_text = "\n".join(results)
         log.info(f"OCR Extracted Text:\n{raw_text}")
         
         # 2. NLP Extraction
-        doc = _NLP(raw_text)
+        doc = nlp(raw_text)
         
         output = {
             "batch_no":        {"value": None, "confidence": 0.0},
@@ -83,5 +115,6 @@ async def extract_from_document(image_bytes: bytes) -> dict:
                     output[label] = {"value": val, "confidence": 0.95} # Custom trained model confidence
         return output
 
+    loop = asyncio.get_running_loop()
     output = await loop.run_in_executor(None, _process)
     return output
