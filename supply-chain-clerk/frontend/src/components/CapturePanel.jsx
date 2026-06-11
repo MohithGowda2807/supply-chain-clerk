@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { Camera, UploadCloud, Info, AlertTriangle, CheckCircle2, Loader2, FastForward } from 'lucide-react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { Camera, UploadCloud, Info, AlertTriangle, CheckCircle2, Loader2, FastForward, Video, VideoOff } from 'lucide-react';
 
 function ConfidencePill({ value }) {
   if (value === undefined || value === null) return null;
@@ -28,10 +28,72 @@ export default function CapturePanel({ onCapture }) {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [dragOver, setDragOver] = useState(false);
+  const [webcamActive, setWebcamActive] = useState(false);
   const inputRef = useRef(null);
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop());
+      }
+    };
+  }, []);
+
+  const startWebcam = useCallback(async () => {
+    try {
+      setError(null);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'environment' }
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+      setWebcamActive(true);
+      setPreview(null);
+      setFile(null);
+      setResult(null);
+    } catch (err) {
+      setError('Could not access webcam. Make sure it is plugged in and you allowed camera permission.');
+    }
+  }, []);
+
+  const stopWebcam = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setWebcamActive(false);
+  }, []);
+
+  const captureFromWebcam = useCallback(() => {
+    if (!videoRef.current || !canvasRef.current) return;
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0);
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const f = new File([blob], 'webcam-capture.jpg', { type: 'image/jpeg' });
+      setFile(f);
+      setPreview(canvas.toDataURL('image/jpeg'));
+      setResult(null);
+      setError(null);
+      stopWebcam();
+    }, 'image/jpeg', 0.92);
+  }, [stopWebcam]);
 
   const handleFile = (f) => {
     if (!f) return;
+    if (webcamActive) stopWebcam();
     setFile(f);
     setResult(null);
     setError(null);
@@ -72,7 +134,6 @@ export default function CapturePanel({ onCapture }) {
 
   return (
     <div className="intake-column">
-      {/* Operating Instructions — compact horizontal layout */}
       <div className="instructions-card">
         <h2><Info size={18} /> Operating Instructions</h2>
         <ul className="instructions-list">
@@ -83,38 +144,86 @@ export default function CapturePanel({ onCapture }) {
         </ul>
       </div>
 
-      {/* Capture Panel */}
       <div className="capture-panel">
-        
-        {/* Drop zone */}
-        <div
-          className={`upload-zone ${dragOver ? 'drag-over' : ''} ${preview ? 'has-preview' : ''}`}
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={handleDrop}
-          onClick={() => inputRef.current?.click()}
+        <button
+          className="btn-webcam-toggle"
+          onClick={webcamActive ? stopWebcam : startWebcam}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            width: '100%', padding: '10px 16px', marginBottom: 10,
+            border: '2px solid #3b82f6', borderRadius: 10, cursor: 'pointer',
+            background: webcamActive ? '#ef4444' : '#3b82f6', color: '#fff',
+            fontWeight: 700, fontSize: 14, transition: 'all 0.2s ease',
+          }}
         >
-          <input
-            ref={inputRef}
-            type="file"
-            accept="image/*"
-            style={{ display: 'none' }}
-            onChange={(e) => handleFile(e.target.files[0])}
-          />
-          {preview ? (
-            <img src={preview} alt="preview" className="preview-image" />
-          ) : (
-            <>
-              <div className="upload-icon">
-                <UploadCloud size={36} />
-              </div>
-              <div className="upload-text">Drop Invoice Document Here</div>
-              <div className="upload-subtext">Supports JPEG, PNG, scanned PDF, or handwriting.</div>
-            </>
-          )}
-        </div>
+          {webcamActive ? <><VideoOff size={18} /> Stop Webcam</> : <><Video size={18} /> Open USB Webcam</>}
+        </button>
 
-        {/* Capture button */}
+        {webcamActive && (
+          <div style={{ position: 'relative', marginBottom: 10 }}>
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              style={{
+                width: '100%', borderRadius: 10, border: '3px solid #3b82f6',
+                background: '#000',
+              }}
+            />
+            <button
+              onClick={captureFromWebcam}
+              style={{
+                position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)',
+                padding: '10px 28px', background: '#22c55e', color: '#fff', border: 'none',
+                borderRadius: 25, fontWeight: 700, fontSize: 14, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: 8, 
+                boxShadow: '0 4px 15px rgba(0,0,0,0.4)',
+              }}
+            >
+              <Camera size={18} /> Snap Photo
+            </button>
+          </div>
+        )}
+
+        <canvas ref={canvasRef} style={{ display: 'none' }} />
+        
+        {!webcamActive && (
+          <div
+            className={`upload-zone ${dragOver ? 'drag-over' : ''} ${preview ? 'has-preview' : ''}`}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={handleDrop}
+            onClick={() => inputRef.current?.click()}
+          >
+            <input
+              ref={inputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              style={{ display: 'none' }}
+              onChange={(e) => handleFile(e.target.files[0])}
+            />
+            {preview ? (
+              <img src={preview} alt="preview" className="preview-image" />
+            ) : (
+              <>
+                <div className="upload-icon">
+                  <UploadCloud size={36} />
+                </div>
+                <div className="upload-text">Drop Invoice Document Here</div>
+                <div className="upload-subtext">Or click to browse. Supports JPEG, PNG, scanned PDF.</div>
+              </>
+            )}
+          </div>
+        )}
+
+        {!webcamActive && preview && (
+          <div style={{ marginBottom: 10 }}>
+            <img src={preview} alt="preview" style={{ width: '100%', borderRadius: 10, border: '2px solid var(--border)' }} />
+          </div>
+        )}
+
         <button
           className="btn-capture"
           onClick={capture}
@@ -128,7 +237,6 @@ export default function CapturePanel({ onCapture }) {
           )}
         </button>
 
-        {/* Error */}
         {error && (
           <div className="error-alert">
             <AlertTriangle size={18} style={{ flexShrink: 0 }} />
@@ -136,7 +244,6 @@ export default function CapturePanel({ onCapture }) {
           </div>
         )}
 
-        {/* Result */}
         {result && (
           <>
             <div className="assigned-bin-banner">

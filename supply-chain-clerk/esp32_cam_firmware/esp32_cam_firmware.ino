@@ -8,7 +8,7 @@ const char* ssid = "can't you afford?";
 const char* password = "Abcdefgh";
 
 // ── Backend Config ────────────────────────────────────────────────────────────
-String serverName = "https://supply-chain-clerk.onrender.com/intake/capture";
+String serverName = "https://unknownjunkspam-supply-chain-backend.hf.space/intake/capture";
 
 // ── Hardware Pins ────────────────────────────────────────────────────────────
 // Push button to trigger photo capture. Connect one side to GPIO 13, other to GND.
