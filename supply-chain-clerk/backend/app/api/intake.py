@@ -39,6 +39,8 @@ async def capture_intake(
         try:
             raw = await local_ai_client.extract_from_document(image_bytes)
         except ValueError as exc:
+            # FALLBACK: Tell ESP32 to route to Bin 2 (Error) so it doesn't hang forever
+            await mqtt_manager.publish_bin_light(bin_code="A02", colour="red", led_index=0)
             raise HTTPException(status_code=422, detail=str(exc))
 
         # ── 2. Pydantic Validation ────────────────────────────────────────────────
@@ -114,5 +116,7 @@ async def capture_intake(
         raise
     except Exception as exc:
         log.error("Capture intake failed: %s", exc, exc_info=True)
+        # FALLBACK: Tell ESP32 to route to Bin 2 (Error) so it doesn't hang forever
+        asyncio.create_task(mqtt_manager.publish_bin_light(bin_code="A02", colour="red", led_index=0))
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {exc}")
 

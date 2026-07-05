@@ -44,8 +44,10 @@ class MQTTManager:
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
     async def start(self) -> None:
+        import uuid
         self._loop = asyncio.get_running_loop()
-        self._client = mqtt.Client(client_id="supply-chain-clerk-backend")
+        client_id = f"supply-chain-clerk-backend-{uuid.uuid4().hex[:8]}"
+        self._client = mqtt.Client(client_id=client_id)
         
         if _USERNAME and _PASSWORD:
             self._client.username_pw_set(_USERNAME, _PASSWORD)

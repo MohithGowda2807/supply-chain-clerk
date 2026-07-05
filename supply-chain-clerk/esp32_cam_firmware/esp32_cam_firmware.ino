@@ -8,7 +8,7 @@ const char* ssid = "can't you afford?";
 const char* password = "Abcdefgh";
 
 // ── Backend Config ────────────────────────────────────────────────────────────
-String serverName = "https://unknownjunkspam-supply-chain-backend.hf.space/intake/capture";
+String serverName = "http://10.117.196.80:8000/intake/capture";
 
 // ── Hardware Pins ────────────────────────────────────────────────────────────
 // Push button to trigger photo capture. Connect one side to GPIO 13, other to GND.
@@ -46,6 +46,12 @@ void setup() {
 
   // Connect to WiFi
   WiFi.begin(ssid, password);
+  
+  // CRITICAL FIX: Lower ESP32-CAM Wi-Fi TX power!
+  // The ESP32-CAM requires massive power for the camera sensor and PSRAM.
+  // The Wi-Fi radio spike often causes it to instantly reboot (Brownout Detector).
+  WiFi.setTxPower(WIFI_POWER_8_5dBm); 
+
   Serial.print("Connecting to WiFi");
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
@@ -146,9 +152,9 @@ void sendMultipartForm(uint8_t* imageBuf, size_t imageLen) {
   int res = http.POST(payload, totalLen);
   
   if(res > 0) {
-    Serial.print("HTTP Response code: ");
-    Serial.println(res);
     String response = http.getString();
+    // CRITICAL FIX: Add a special prefix so the Main Board knows exactly which line contains the JSON!
+    Serial.print("[AI_RESPONSE]");
     Serial.println(response);
   } else {
     Serial.print("Error sending POST: ");
